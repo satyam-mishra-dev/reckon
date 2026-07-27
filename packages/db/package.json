@@ -1,0 +1,21 @@
+{
+  "name": "@tally/db",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "migrate": "node-pg-migrate up -m migrations",
+    "seed": "tsx src/seed.ts"
+  },
+  "devDependencies": {
+    "@tally/core": "*",
+    "@testcontainers/postgresql": "^11.14.0",
+    "@types/pg": "^8.20.3"
+  },
+  "dependencies": {
+    "node-pg-migrate": "^9.0.0",
+    "pg": "^8.22.0"
+  }
+}
