@@ -1,0 +1,21 @@
+# Host port 5433 (not 5432) on purpose: 5432/6379/6380/8108 belong to other
+# containers on this machine.
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: tally
+      POSTGRES_PASSWORD: tally
+      POSTGRES_DB: tally
+    volumes:
+      - tally-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U tally -d tally']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  tally-pgdata:
