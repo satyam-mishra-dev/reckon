@@ -10,10 +10,15 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@tally/core": "*",
     "fastify": "^5.11.2",
     "pg": "^8.22.0"
   },
   "devDependencies": {
-    "@types/pg": "^8.20.3"
+    "@tally/db": "*",
+    "@tally/provider-sim": "*",
+    "@testcontainers/postgresql": "^11.14.0",
+    "@types/pg": "^8.20.3",
+    "node-pg-migrate": "^9.0.0"
   }
 }

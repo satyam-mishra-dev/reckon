@@ -74,6 +74,59 @@ export function reduceBalances(entries: Iterable<EntryInput>): Map<string, bigin
 type TransactionRow = { id: string };
 
 /**
+ * Composable core of postTransaction: same validation, inserts, and
+ * (intent_id, kind) idempotency, but NO transaction control — the caller must
+ * already hold an open TX on `client` and owns COMMIT/ROLLBACK. This is what
+ * lets the idempotency pipeline post ledger transactions and advance its
+ * recovery point atomically in one TX.
+ */
+export async function postTransactionInTx(
+  client: ClientBase,
+  input: PostTransactionInput,
+): Promise<PostedTransaction> {
+  validateEntries(input.entries);
+
+  const inserted = await client.query<TransactionRow>(
+    `INSERT INTO ledger_transactions (intent_id, kind)
+     VALUES ($1, $2)
+     ON CONFLICT (intent_id, kind) DO NOTHING
+     RETURNING id`,
+    [input.intentId, input.kind],
+  );
+
+  const insertedRow = inserted.rows[0];
+  if (insertedRow === undefined) {
+    // Conflict: this (intent_id, kind) is already posted. Read it back and
+    // report a no-op. ON CONFLICT already waited out any concurrent writer,
+    // so the row is committed and visible here (READ COMMITTED).
+    const existing = await client.query<TransactionRow>(
+      'SELECT id FROM ledger_transactions WHERE intent_id = $1 AND kind = $2',
+      [input.intentId, input.kind],
+    );
+    const existingRow = existing.rows[0];
+    if (existingRow === undefined) {
+      throw new Error(
+        `ledger_transactions (${input.intentId}, ${input.kind}) conflicted on insert but cannot be read back`,
+      );
+    }
+    return { id: existingRow.id, intentId: input.intentId, kind: input.kind, alreadyPosted: true };
+  }
+
+  await client.query(
+    `INSERT INTO ledger_entries (transaction_id, account_id, direction, amount_minor)
+     SELECT $1, e.account_id, e.direction, e.amount_minor
+     FROM unnest($2::uuid[], $3::text[], $4::bigint[]) AS e (account_id, direction, amount_minor)`,
+    [
+      insertedRow.id,
+      input.entries.map((e) => e.accountId),
+      input.entries.map((e) => e.direction),
+      input.entries.map((e) => e.amountMinor.toString()),
+    ],
+  );
+  return { id: insertedRow.id, intentId: input.intentId, kind: input.kind, alreadyPosted: false };
+}
+
+/**
  * Posts a balanced double-entry transaction atomically.
  *
  * - Validates before touching the database (see validateEntries).
@@ -89,61 +142,11 @@ export async function postTransaction(
   client: ClientBase,
   input: PostTransactionInput,
 ): Promise<PostedTransaction> {
-  validateEntries(input.entries);
+  validateEntries(input.entries); // fail fast, before opening a TX
 
   await client.query('BEGIN');
   try {
-    const inserted = await client.query<TransactionRow>(
-      `INSERT INTO ledger_transactions (intent_id, kind)
-       VALUES ($1, $2)
-       ON CONFLICT (intent_id, kind) DO NOTHING
-       RETURNING id`,
-      [input.intentId, input.kind],
-    );
-
-    const insertedRow = inserted.rows[0];
-    let result: PostedTransaction;
-
-    if (insertedRow === undefined) {
-      // Conflict: this (intent_id, kind) is already posted. Read it back and
-      // report a no-op. ON CONFLICT already waited out any concurrent writer,
-      // so the row is committed and visible here (READ COMMITTED).
-      const existing = await client.query<TransactionRow>(
-        'SELECT id FROM ledger_transactions WHERE intent_id = $1 AND kind = $2',
-        [input.intentId, input.kind],
-      );
-      const existingRow = existing.rows[0];
-      if (existingRow === undefined) {
-        throw new Error(
-          `ledger_transactions (${input.intentId}, ${input.kind}) conflicted on insert but cannot be read back`,
-        );
-      }
-      result = {
-        id: existingRow.id,
-        intentId: input.intentId,
-        kind: input.kind,
-        alreadyPosted: true,
-      };
-    } else {
-      await client.query(
-        `INSERT INTO ledger_entries (transaction_id, account_id, direction, amount_minor)
-         SELECT $1, e.account_id, e.direction, e.amount_minor
-         FROM unnest($2::uuid[], $3::text[], $4::bigint[]) AS e (account_id, direction, amount_minor)`,
-        [
-          insertedRow.id,
-          input.entries.map((e) => e.accountId),
-          input.entries.map((e) => e.direction),
-          input.entries.map((e) => e.amountMinor.toString()),
-        ],
-      );
-      result = {
-        id: insertedRow.id,
-        intentId: input.intentId,
-        kind: input.kind,
-        alreadyPosted: false,
-      };
-    }
-
+    const result = await postTransactionInTx(client, input);
     await client.query('COMMIT');
     return result;
   } catch (err) {
