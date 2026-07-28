@@ -2,6 +2,9 @@
   "name": "@tally/provider-sim",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/app.ts"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
@@ -9,6 +12,6 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "pino": "^10.3.1"
+    "fastify": "^5.11.2"
   }
 }
