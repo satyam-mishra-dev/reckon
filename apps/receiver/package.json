@@ -1,0 +1,18 @@
+{
+  "name": "@tally/receiver",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/app.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@tally/core": "*",
+    "fastify": "^5.11.2"
+  }
+}
