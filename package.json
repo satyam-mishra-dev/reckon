@@ -10,11 +10,13 @@
     "packages/*"
   ],
   "scripts": {
-    "lint": "npm run lint --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present && eslint scripts",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p scripts",
     "test": "npm run test --workspaces --if-present",
     "test:unit": "npm run test -w packages/core -w apps/api",
     "test:integration": "npm run test -w packages/db -w apps/worker",
+    "reconcile": "tsx apps/worker/src/reconcile-cli.ts",
+    "chaos": "tsx scripts/chaos.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
