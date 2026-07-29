@@ -24,11 +24,7 @@ import {
 // point leaves a row the next caller simply continues from.
 
 export type RecoveryPoint =
-  | 'started'
-  | 'intent_created'
-  | 'provider_charged'
-  | 'ledger_posted'
-  | 'finished';
+  'started' | 'intent_created' | 'provider_charged' | 'ledger_posted' | 'finished';
 
 /**
  * Test-only seam: invoked after each atomic phase commits, with the recovery
@@ -186,7 +182,10 @@ async function chargeProvider(
     const response = await fetch(`${deps.providerUrl}/charges`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'idempotency-key': derivedKey },
-      body: JSON.stringify({ amount_minor: Number(intent.amount_minor), currency: intent.currency }),
+      body: JSON.stringify({
+        amount_minor: Number(intent.amount_minor),
+        currency: intent.currency,
+      }),
       signal: AbortSignal.timeout(deps.providerTimeoutMs),
     });
     if (response.ok) {
@@ -343,7 +342,8 @@ async function phasePostLedger(client: PoolClient, key: KeyRow): Promise<void> {
 async function phaseFinish(client: PoolClient, key: KeyRow): Promise<void> {
   const intent = await loadIntent(client, key);
   const providerRef = intent.provider_ref;
-  if (providerRef === null) throw new Error(`intent ${intent.id} reached finish without provider_ref`);
+  if (providerRef === null)
+    throw new Error(`intent ${intent.id} reached finish without provider_ref`);
   await inTx(client, async () => {
     await applyTransition(client, intent, { type: 'PROVIDER_ACCEPTED', providerRef });
     const body = {

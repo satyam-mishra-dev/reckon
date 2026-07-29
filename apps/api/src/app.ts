@@ -1,6 +1,7 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Pool } from 'pg';
+import { enqueueJob } from '@tally/core';
 import type { ApiConfig } from './config.js';
 import { incCounter, observe, renderMetrics } from './metrics.js';
 import { runIntentPipeline, type FaultHook, type RecoveryPoint } from './pipeline.js';
@@ -160,7 +161,11 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
             [row.id],
           );
           const now = recheck.rows[0];
-          if (now !== undefined && now.recovery_point === 'finished' && now.response_code !== null) {
+          if (
+            now !== undefined &&
+            now.recovery_point === 'finished' &&
+            now.response_code !== null
+          ) {
             return reply.code(now.response_code).send(now.response_body);
           }
           reply.header('retry-after', '1');
@@ -201,6 +206,124 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           request.log.error({ err: unlockErr, keyId }, 'failed to release idempotency lock');
         }
         return reply.code(500).send({ error: 'internal_error' });
+      }
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // Webhook + DLQ ops endpoints (brief §4.7).
+  // -------------------------------------------------------------------------
+
+  const UUID_PATTERN = '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$';
+  const uuidParams = {
+    type: 'object',
+    required: ['id'],
+    properties: { id: { type: 'string', pattern: UUID_PATTERN } },
+  } as const;
+
+  app.post<{ Body: { url: string } }>(
+    '/v1/webhook_endpoints',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['url'],
+          additionalProperties: false,
+          properties: { url: { type: 'string', minLength: 1, maxLength: 2000 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      // The secret is returned exactly once, at registration — Stripe-style.
+      const secret = `whsec_${randomBytes(24).toString('hex')}`;
+      const merchant = await getMerchantId();
+      const result = await pool.query<{ id: string }>(
+        'INSERT INTO webhook_endpoints (merchant_id, url, secret) VALUES ($1, $2, $3) RETURNING id',
+        [merchant, request.body.url, secret],
+      );
+      return reply.code(201).send({ id: result.rows[0]?.id, url: request.body.url, secret });
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/v1/events/:id',
+    { schema: { params: uuidParams } },
+    async (request, reply) => {
+      const result = await pool.query<{
+        id: string;
+        type: string;
+        payload: unknown;
+        created_at: Date;
+        dispatched_at: Date | null;
+      }>('SELECT id, type, payload, created_at, dispatched_at FROM events WHERE id = $1', [
+        request.params.id,
+      ]);
+      const event = result.rows[0];
+      if (event === undefined) return reply.code(404).send({ error: 'not_found' });
+      return event;
+    },
+  );
+
+  app.get<{ Querystring: { status?: 'pending' | 'delivered' | 'dead' } }>(
+    '/v1/deliveries',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { status: { type: 'string', enum: ['pending', 'delivered', 'dead'] } },
+        },
+      },
+    },
+    async (request) => {
+      const status = request.query.status ?? null;
+      const result = await pool.query(
+        `SELECT d.id, d.event_id, d.endpoint_id, d.attempt, d.status,
+                d.next_attempt_at, d.last_response_code, e.type AS event_type, w.url
+         FROM webhook_deliveries d
+         JOIN events e ON e.id = d.event_id
+         JOIN webhook_endpoints w ON w.id = d.endpoint_id
+         WHERE $1::text IS NULL OR d.status = $1
+         ORDER BY e.created_at DESC
+         LIMIT 100`,
+        [status],
+      );
+      return { deliveries: result.rows };
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/v1/deliveries/:id/requeue',
+    { schema: { params: uuidParams } },
+    async (request, reply) => {
+      // Reset the dead delivery and enqueue a fresh job atomically. Only dead
+      // deliveries can be requeued — pending ones already have a live job.
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const reset = await client.query<{ id: string }>(
+          `UPDATE webhook_deliveries
+           SET status = 'pending', attempt = 0, next_attempt_at = now(), last_response_code = NULL
+           WHERE id = $1 AND status = 'dead'
+           RETURNING id`,
+          [request.params.id],
+        );
+        if (reset.rows.length === 0) {
+          await client.query('ROLLBACK');
+          return reply
+            .code(409)
+            .send({ error: 'not_dead', message: 'only dead deliveries can be requeued' });
+        }
+        const jobId = await enqueueJob(client, 'deliver_webhook', {
+          delivery_id: request.params.id,
+        });
+        await client.query('COMMIT');
+        return { id: request.params.id, status: 'pending', job_id: jobId };
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        throw err;
+      } finally {
+        client.release();
       }
     },
   );

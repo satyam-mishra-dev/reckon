@@ -280,7 +280,10 @@ describe('crash-resume', () => {
     });
     await crashApp.ready();
     try {
-      const crashed = await postIntent(crashApp, 'crash-1', { amount_minor: 6_000, currency: 'USD' });
+      const crashed = await postIntent(crashApp, 'crash-1', {
+        amount_minor: 6_000,
+        currency: 'USD',
+      });
       expect(crashed.statusCode).toBe(500);
     } finally {
       await crashApp.close();
