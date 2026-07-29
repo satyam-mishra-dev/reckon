@@ -11,6 +11,7 @@ import {
 } from '@tally/core';
 import { runIntentPipeline } from '@tally/api/pipeline';
 import type { WorkerConfig } from './config.js';
+import { runReconciliation } from './reconciler.js';
 
 // Job handlers + the two pollers that feed the queue (outbox fan-out,
 // completer enqueuer). Every handler is IDEMPOTENT — recovery is
@@ -285,6 +286,40 @@ export async function enqueueStuckKeys(db: Queryable, config: WorkerConfig): Pro
     [config.completerGraceMs / 1000, config.idempotencyLockTimeoutMs / 1000],
   );
   return result.rows.length;
+}
+
+// ---------------------------------------------------------------------------
+// reconcile (brief §4.8) — the cron-style pass. runReconciliation persists its
+// own report row; an unexpected throw (e.g. provider /truth unreachable)
+// propagates to the poll loop's crash-bar, which schedules a retry.
+// ---------------------------------------------------------------------------
+
+export async function handleReconcile(ctx: HandlerContext, job: JobRow): Promise<void> {
+  const { pool, config, log } = ctx;
+  await runReconciliation(pool, {
+    providerUrl: config.providerUrl,
+    providerTimeoutMs: config.providerTimeoutMs,
+    graceMs: config.completerGraceMs,
+    lockTimeoutMs: config.idempotencyLockTimeoutMs,
+    log,
+  });
+  await completeJob(pool, job.id, config.workerId);
+}
+
+/**
+ * Cron tick: enqueue a reconcile job unless one is already live. The partial
+ * unique index jobs_reconcile_live_idx + ON CONFLICT makes this race-free
+ * across workers. Returns true if a job was enqueued.
+ */
+export async function enqueueReconcileJob(db: Queryable): Promise<boolean> {
+  const result = await db.query<{ id: string }>(
+    `INSERT INTO jobs (kind, payload)
+     VALUES ('reconcile', '{}'::jsonb)
+     ON CONFLICT (kind) WHERE kind = 'reconcile' AND status IN ('pending', 'running')
+       DO NOTHING
+     RETURNING id`,
+  );
+  return result.rows.length > 0;
 }
 
 // ---------------------------------------------------------------------------

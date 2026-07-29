@@ -56,7 +56,7 @@ interface KeyRow {
   request_params: { amount_minor: number; currency: string } | null;
 }
 
-interface IntentRow {
+export interface IntentRow {
   id: string;
   amount_minor: string; // pg returns bigint as string
   currency: string;
@@ -139,9 +139,10 @@ function stateOf(intent: IntentRow): IntentState {
 /**
  * Every status change goes through the state machine, and the outbox event is
  * written in the same TX as the status update (transactional outbox). Caller
- * must already hold an open TX.
+ * must already hold an open TX. Exported for the reconciler, which applies
+ * provider truth to a stuck intent through the same machine.
  */
-async function applyTransition(
+export async function applyTransition(
   client: PoolClient,
   intent: IntentRow,
   event: IntentEvent,

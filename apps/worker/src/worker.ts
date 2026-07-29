@@ -4,10 +4,12 @@ import type { Logger } from 'pino';
 import { claimJobs, failJob, heartbeatJobs, sweepExpired, type JobRow } from '@tally/core';
 import type { WorkerConfig } from './config.js';
 import {
+  enqueueReconcileJob,
   enqueueStuckKeys,
   fanOutEvents,
   handleCompleteIntent,
   handleDeliverWebhook,
+  handleReconcile,
   handleTestSleep,
   type HandlerContext,
 } from './handlers.js';
@@ -31,6 +33,7 @@ export function startWorker(config: WorkerConfig, log: Logger): RunningWorker {
   const handlers = new Map<string, Handler>([
     ['deliver_webhook', handleDeliverWebhook],
     ['complete_intent', handleCompleteIntent],
+    ['reconcile', handleReconcile],
   ]);
   if (config.testJobs) handlers.set('test_sleep', handleTestSleep);
   const kinds = [...handlers.keys()];
@@ -147,6 +150,9 @@ export function startWorker(config: WorkerConfig, log: Logger): RunningWorker {
     periodically('completer-enqueuer', config.completerIntervalMs, async () => {
       const enqueued = await enqueueStuckKeys(pool, config);
       if (enqueued > 0) log.warn({ enqueued }, 'enqueued completion jobs for stuck keys');
+    }),
+    periodically('reconcile-enqueuer', config.reconcileIntervalMs, async () => {
+      if (await enqueueReconcileJob(pool)) log.info('reconcile job enqueued');
     }),
   ]);
 

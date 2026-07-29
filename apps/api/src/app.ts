@@ -328,5 +328,18 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     },
   );
 
+  // Reconciliation reports (brief §4.8) — one row per pass, newest first.
+  app.get('/v1/reconciliations', async () => {
+    const result = await pool.query(
+      `SELECT id, started_at, finished_at, duration_ms, intents_checked, transactions_checked,
+              entries_checked, drift_minor, internal_violations, orphans_found, orphans_resolved,
+              orphans_unresolved, flagged_critical, external_checked, details
+       FROM reconciliation_reports
+       ORDER BY finished_at DESC
+       LIMIT 50`,
+    );
+    return { reports: result.rows };
+  });
+
   return app;
 }

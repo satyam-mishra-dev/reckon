@@ -40,6 +40,8 @@ export interface WorkerConfig {
   maxAttempts: number;
   backoffBaseMs: number;
   backoffCapMs: number;
+  /** Cron cadence for the reconcile job (enqueued with a live-job dedupe index). */
+  reconcileIntervalMs: number;
   /** Registers the test_sleep job handler — test seam only, never set in production. */
   testJobs: boolean;
   /** Injectable backoff jitter for deterministic tests (in-process only, not env). */
@@ -68,6 +70,7 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     maxAttempts: Number(env.MAX_ATTEMPTS ?? 10),
     backoffBaseMs: Number(env.BACKOFF_BASE_MS ?? 1000),
     backoffCapMs: Number(env.BACKOFF_CAP_MS ?? 60_000),
+    reconcileIntervalMs: Number(env.RECONCILE_INTERVAL_MS ?? 60_000),
     testJobs: env.TEST_JOBS === '1',
     rand: undefined,
   };
