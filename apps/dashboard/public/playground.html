@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tally — Playground</title>
+    <link rel="stylesheet" href="tally.css" />
+  </head>
+  <body>
+    <header class="nav"></header>
+    <main>
+      <h1>Playground</h1>
+      <p class="subtitle">
+        Fire real payments at the engine and watch idempotency do its job. Same key, same request —
+        always the same answer, always exactly one charge.
+      </p>
+
+      <div class="card">
+        <h2>Create a payment</h2>
+        <div class="form-row">
+          <div class="field">
+            <label for="amount">Amount (minor units)</label>
+            <input id="amount" type="number" min="1" step="1" value="4999" style="width: 140px" />
+          </div>
+          <div class="field">
+            <label for="currency">Currency</label>
+            <select id="currency">
+              <option>USD</option>
+            </select>
+          </div>
+          <div class="field" style="flex: 1; min-width: 260px">
+            <label for="key">Idempotency-Key</label>
+            <input id="key" type="text" class="mono" spellcheck="false" />
+          </div>
+          <button id="regen" title="New key = new payment">Regenerate</button>
+        </div>
+        <div class="form-row">
+          <button id="pay" class="primary big">Pay</button>
+          <button id="burst" class="big">Double-submit ×5</button>
+          <span class="muted small" id="amount-hint"></span>
+        </div>
+        <div id="single-result"></div>
+        <div id="burst-verdict"></div>
+        <div id="burst-results" class="responses"></div>
+      </div>
+
+      <div class="card">
+        <h2>Provider chaos</h2>
+        <p class="muted small" style="margin-top: -6px">
+          The simulated card provider is adversarial on purpose. Flip a profile, then pay: watch
+          intents fail, retry and recover in the feed below (declines are terminal; timeouts leave a
+          resumable intent that a retry with the same key — or the background completer — finishes).
+        </p>
+        <div class="seg-group" id="profiles"></div>
+        <pre class="json" id="provider-config">loading…</pre>
+      </div>
+
+      <div class="card">
+        <h2>Live intent feed</h2>
+        <div class="scroll-x">
+          <table>
+            <thead>
+              <tr>
+                <th>Intent</th>
+                <th class="num">Amount</th>
+                <th>Status</th>
+                <th>Failure</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="feed"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <script type="module">
+      import { api, autoRefresh, chip, esc, money, renderNav, toast, ts } from './tally.js';
+
+      renderNav('playground.html');
+
+      // ---- form -------------------------------------------------------------
+
+      const keyInput = document.getElementById('key');
+      const amountInput = document.getElementById('amount');
+
+      function newKey() {
+        keyInput.value = `play_${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`;
+      }
+      document.getElementById('regen').onclick = newKey;
+      newKey();
+
+      function amountHint() {
+        const minor = Number(amountInput.value || 0);
+        document.getElementById('amount-hint').textContent =
+          `= ${money(String(minor))} · fee ${money(String(Math.floor((minor * 29) / 1000) + 30))} (2.9% + 30, floor)`;
+      }
+      amountInput.oninput = amountHint;
+      amountHint();
+
+      // One submit, timed. On 409 in-progress (another concurrent submit holds
+      // the key's lock) a well-behaved client retries the SAME key until the
+      // stored response replays — that retry loop is part of the contract.
+      async function submit(key) {
+        const started = performance.now();
+        let waits = 0;
+        for (;;) {
+          const response = await fetch('/api/v1/payment_intents', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'idempotency-key': key },
+            body: JSON.stringify({
+              amount_minor: Number(amountInput.value),
+              currency: document.getElementById('currency').value,
+            }),
+          });
+          const text = await response.text();
+          let parsed = null;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            /* non-JSON error body */
+          }
+          if (response.status === 409 && parsed?.error === 'request_in_progress' && waits < 40) {
+            waits += 1;
+            await new Promise((r) => setTimeout(r, 250));
+            continue;
+          }
+          return { status: response.status, text, parsed, ms: performance.now() - started, waits };
+        }
+      }
+
+      function resultCard(r, matched) {
+        const tone = r.status === 200 ? 'ok' : r.status === 402 ? 'warn' : 'bad';
+        return `<div class="response-card${matched ? ' match' : ''}">
+          <span class="chip" data-tone="${tone}">HTTP ${r.status}</span>
+          <span class="muted small">${r.ms.toFixed(0)}ms${r.waits > 0 ? ` · ${r.waits}× 409 retried` : ''}</span>
+          <pre>${esc(r.text)}</pre>
+        </div>`;
+      }
+
+      document.getElementById('pay').onclick = async () => {
+        const button = document.getElementById('pay');
+        button.disabled = true;
+        document.getElementById('burst-results').innerHTML = '';
+        document.getElementById('burst-verdict').innerHTML = '';
+        try {
+          const r = await submit(keyInput.value);
+          document.getElementById('single-result').innerHTML =
+            `<div class="responses" style="grid-template-columns: 1fr">${resultCard(r, false)}</div>`;
+        } finally {
+          button.disabled = false;
+        }
+      };
+
+      // THE demo: 5 concurrent, byte-identical requests. Exactly one becomes
+      // the owner and executes; the rest replay its stored response.
+      document.getElementById('burst').onclick = async () => {
+        const button = document.getElementById('burst');
+        button.disabled = true;
+        document.getElementById('single-result').innerHTML = '';
+        document.getElementById('burst-verdict').innerHTML =
+          '<div class="verdict" data-tone="ok">firing 5 concurrent requests with the same key…</div>';
+        document.getElementById('burst-results').innerHTML = '';
+        try {
+          const key = keyInput.value;
+          const results = await Promise.all([1, 2, 3, 4, 5].map(() => submit(key)));
+          const identical = results.every((r) => r.text === results[0].text);
+          const refs = new Set(results.map((r) => r.parsed?.provider_ref).filter(Boolean));
+          const ids = new Set(results.map((r) => r.parsed?.id).filter(Boolean));
+          document.getElementById('burst-results').innerHTML = results
+            .map((r) => resultCard(r, identical))
+            .join('');
+          document.getElementById('burst-verdict').innerHTML = identical
+            ? `<div class="verdict" data-tone="ok">✓ all 5 responses byte-identical —
+                ${ids.size <= 1 ? 'one intent' : `${ids.size} intents?!`},
+                ${
+                  refs.size === 1
+                    ? `one provider charge (<span class="mono">${esc([...refs][0])}</span>)`
+                    : refs.size === 0
+                      ? 'zero provider charges (declined/failed — still exactly one outcome)'
+                      : `${refs.size} provider charges?!`
+                }</div>`
+            : '<div class="verdict" data-tone="bad">✗ responses differ — idempotency is broken, file a bug</div>';
+        } finally {
+          button.disabled = false;
+        }
+      };
+
+      // ---- provider chaos ---------------------------------------------------
+
+      const PROFILES = {
+        healthy: {
+          latency_base_ms: 0,
+          latency_jitter_ms: 0,
+          decline_rate: 0,
+          timeout_after_charge_rate: 0,
+        },
+        'high latency': {
+          latency_base_ms: 800,
+          latency_jitter_ms: 1200,
+          decline_rate: 0,
+          timeout_after_charge_rate: 0,
+        },
+        'declines 50%': {
+          latency_base_ms: 0,
+          latency_jitter_ms: 0,
+          decline_rate: 0.5,
+          timeout_after_charge_rate: 0,
+        },
+        'timeout after charge 40%': {
+          latency_base_ms: 0,
+          latency_jitter_ms: 0,
+          decline_rate: 0,
+          timeout_after_charge_rate: 0.4,
+        },
+      };
+      let activeProfile = null;
+
+      function renderProfiles() {
+        document.getElementById('profiles').innerHTML = Object.keys(PROFILES)
+          .map(
+            (name) =>
+              `<button class="seg${name === activeProfile ? ' active' : ''}" data-p="${name}">${name}</button>`,
+          )
+          .join('');
+        for (const button of document.querySelectorAll('#profiles button')) {
+          button.onclick = async () => {
+            const result = await api('/v1/provider/config', {
+              method: 'PUT',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(PROFILES[button.dataset.p]),
+            });
+            if (result.status === 200) {
+              activeProfile = button.dataset.p;
+              toast(`provider profile → ${activeProfile}`);
+              renderProfiles();
+              showConfig(result.body);
+            } else {
+              toast('provider config update failed');
+            }
+          };
+        }
+      }
+
+      function showConfig(config) {
+        document.getElementById('provider-config').textContent = JSON.stringify(config, null, 2);
+      }
+
+      async function loadConfig() {
+        const { status, body } = await api('/v1/provider/config');
+        if (status === 200) {
+          showConfig(body);
+          const match = Object.entries(PROFILES).find(([, p]) =>
+            Object.entries(p).every(([k, v]) => body[k] === v),
+          );
+          activeProfile = match ? match[0] : null;
+          renderProfiles();
+        } else {
+          showConfig({ error: 'provider unreachable' });
+        }
+      }
+
+      renderProfiles();
+      loadConfig();
+
+      // ---- live feed --------------------------------------------------------
+
+      async function refreshFeed() {
+        const { body } = await api('/v1/payment_intents?limit=10');
+        if (!body) return;
+        document.getElementById('feed').innerHTML =
+          body.intents.length === 0
+            ? '<tr><td colspan="5" class="muted">no intents yet — hit Pay</td></tr>'
+            : body.intents
+                .map(
+                  (i) => `<tr>
+                    <td class="mono small">
+                      <a href="intents.html#${esc(i.id)}">${esc(i.id)}</a>
+                    </td>
+                    <td class="num mono">${money(i.amount_minor, i.currency)}</td>
+                    <td>${chip(i.status)}</td>
+                    <td class="mono muted small">${esc(i.failure_code ?? '')}</td>
+                    <td class="muted small">${ts(i.updated_at)}</td>
+                  </tr>`,
+                )
+                .join('');
+      }
+
+      autoRefresh(refreshFeed, 2000);
+    </script>
+  </body>
+</html>

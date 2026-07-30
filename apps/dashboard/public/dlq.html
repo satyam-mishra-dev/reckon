@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tally — DLQ</title>
+    <link rel="stylesheet" href="tally.css" />
+  </head>
+  <body>
+    <header class="nav"></header>
+    <main>
+      <h1>Webhook deliveries</h1>
+      <p class="subtitle">
+        Delivery is at-least-once with exponential backoff; after 10 failed attempts a delivery is
+        dead-lettered here. Requeue resets it for a fresh run.
+      </p>
+      <div class="card">
+        <div class="seg-group" id="filters"></div>
+        <div class="scroll-x" style="margin-top: 14px">
+          <table>
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th>Endpoint</th>
+                <th>Status</th>
+                <th class="num">Attempts</th>
+                <th class="num">Last code</th>
+                <th>Next attempt</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <script type="module">
+      import { api, autoRefresh, chip, esc, renderNav, toast, ts } from './tally.js';
+
+      renderNav('dlq.html');
+
+      const FILTERS = ['dead', 'pending', 'delivered', 'all'];
+      let filter = 'dead';
+
+      function renderFilters() {
+        document.getElementById('filters').innerHTML = FILTERS.map(
+          (s) => `<button class="seg${s === filter ? ' active' : ''}" data-f="${s}">${s}</button>`,
+        ).join('');
+        for (const button of document.querySelectorAll('#filters button')) {
+          button.onclick = () => {
+            filter = button.dataset.f;
+            renderFilters();
+            refresh();
+          };
+        }
+      }
+
+      async function refresh() {
+        const query = filter === 'all' ? '' : `?status=${filter}`;
+        const { body } = await api(`/v1/deliveries${query}`);
+        if (!body) return;
+        document.getElementById('rows').innerHTML =
+          body.deliveries.length === 0
+            ? `<tr><td colspan="7" class="muted">${
+                filter === 'dead'
+                  ? 'DLQ is empty — nothing has exhausted its retries'
+                  : 'no deliveries'
+              }</td></tr>`
+            : body.deliveries
+                .map(
+                  (d) => `<tr>
+                    <td class="mono small">${esc(d.event_type)}</td>
+                    <td class="muted small">${esc(d.url)}</td>
+                    <td>${chip(d.status)}</td>
+                    <td class="num">${d.attempt}</td>
+                    <td class="num">${d.last_response_code ?? '—'}</td>
+                    <td class="muted small">${d.next_attempt_at ? ts(d.next_attempt_at) : '—'}</td>
+                    <td>${
+                      d.status === 'dead'
+                        ? `<button class="primary" data-id="${esc(d.id)}">Requeue</button>`
+                        : ''
+                    }</td>
+                  </tr>`,
+                )
+                .join('');
+        for (const button of document.querySelectorAll('#rows button[data-id]')) {
+          button.onclick = async () => {
+            button.disabled = true;
+            const result = await api(`/v1/deliveries/${button.dataset.id}/requeue`, {
+              method: 'POST',
+            });
+            toast(
+              result.status === 200
+                ? 'requeued — the worker will retry it now'
+                : `requeue failed: ${result.body?.error ?? result.status}`,
+            );
+            refresh();
+          };
+        }
+      }
+
+      renderFilters();
+      autoRefresh(refresh, 3000);
+    </script>
+  </body>
+</html>
