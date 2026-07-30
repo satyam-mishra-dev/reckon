@@ -160,6 +160,8 @@ export function buildProviderSim(): FastifyInstance {
     },
   );
 
+  app.get('/config', async () => config);
+
   app.get('/truth', async () => ({ charges }));
 
   app.get('/healthz', async () => ({ status: 'ok' }));

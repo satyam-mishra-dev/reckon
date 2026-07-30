@@ -5,6 +5,7 @@ import { enqueueJob } from '@tally/core';
 import type { ApiConfig } from './config.js';
 import { incCounter, observe, renderMetrics } from './metrics.js';
 import { runIntentPipeline, type FaultHook, type RecoveryPoint } from './pipeline.js';
+import { registerReadModels } from './read-models.js';
 
 export interface BuildAppOptions {
   config: ApiConfig;
@@ -327,6 +328,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       }
     },
   );
+
+  // Dashboard read models + provider config passthrough (phase E).
+  registerReadModels(app, pool, {
+    providerUrl: config.providerUrl,
+    providerTimeoutMs: config.providerTimeoutMs,
+  });
 
   // Reconciliation reports (brief §4.8) — one row per pass, newest first.
   app.get('/v1/reconciliations', async () => {

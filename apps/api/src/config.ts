@@ -13,9 +13,11 @@ export interface ApiConfig {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   return {
-    port: Number(env.PORT ?? 3000),
+    // Defaults line up with the compose host ports (see docker-compose.yml),
+    // so dev-mode processes and the composed stack interoperate untouched.
+    port: Number(env.PORT ?? 4800),
     databaseUrl: env.DATABASE_URL ?? 'postgres://tally:tally@localhost:5433/tally',
-    providerUrl: env.PROVIDER_URL ?? 'http://localhost:4000',
+    providerUrl: env.PROVIDER_URL ?? 'http://localhost:4802',
     providerTimeoutMs: Number(env.PROVIDER_TIMEOUT_MS ?? 5000),
     lockTimeoutMs: Number(env.IDEMPOTENCY_LOCK_TIMEOUT_MS ?? 90_000),
     logLevel: env.LOG_LEVEL ?? 'info',
