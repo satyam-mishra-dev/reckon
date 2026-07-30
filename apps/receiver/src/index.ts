@@ -6,7 +6,7 @@ if (secret === undefined || secret.length === 0) {
 }
 
 const app = buildReceiver({ secret });
-const port = Number(process.env.PORT ?? 4100);
+const port = Number(process.env.PORT ?? 4803);
 await app.listen({ port, host: '0.0.0.0' });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

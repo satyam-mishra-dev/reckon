@@ -1,0 +1,9 @@
+# COPY . . must never drag in host node_modules (native binaries differ) or
+# junk that busts the build cache.
+node_modules
+**/node_modules
+.git
+Dockerfile
+docker-compose.yml
+bench-results.json
+*.log

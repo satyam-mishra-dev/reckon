@@ -1,5 +1,25 @@
-# Host port 5433 (not 5432) on purpose: 5432/6379/6380/8108 belong to other
-# containers on this machine.
+# The whole stack: `docker compose up -d --wait` boots postgres, runs
+# migrations + seed once, then starts api, worker, provider-sim, receiver and
+# dashboard. Dashboard: http://localhost:4801
+#
+# Host ports (5432/6379/6380/8108/3000/4000 belong to other things on this
+# machine, hence the 48xx range and 5433 for Postgres):
+#   5433  postgres      4800  api           4801  dashboard
+#   4802  provider-sim  4803  receiver
+
+# One image for every app service. Only `migrate` declares `build:` — with the
+# same tag on all six, buildx would race itself building the identical image
+# six times. The rest use the tag it produced (pull_policy: never — this image
+# never lives in a registry).
+x-app: &app
+  image: tally-app
+  pull_policy: never
+  restart: unless-stopped
+
+x-db-env: &db-env
+  DATABASE_URL: postgres://tally:tally@postgres:5432/tally
+  PROVIDER_URL: http://provider-sim:4802
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -11,11 +31,92 @@ services:
       POSTGRES_DB: tally
     volumes:
       - tally-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U tally -d tally']
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # One-shot: migrations + idempotent seed (merchant, platform accounts, and a
+  # demo webhook endpoint pointed at the receiver — same secret the receiver
+  # boots with, so signed deliveries verify out of the box).
+  migrate:
+    <<: *app
+    build: .
+    restart: 'no'
+    command: sh -c 'npm run migrate -w packages/db && npm run seed -w packages/db'
+    environment:
+      <<: *db-env
+      SEED_WEBHOOK_URL: http://receiver:4803/webhooks
+      SEED_WEBHOOK_SECRET: ${TALLY_WEBHOOK_SECRET:-whsec_demo_compose_only}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  provider-sim:
+    <<: *app
+    command: npm run start -w apps/provider-sim
+    environment:
+      PORT: '4802'
+    ports:
+      - '4802:4802'
+    healthcheck: &http-health
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:$$PORT/healthz || exit 1']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  api:
+    <<: *app
+    command: npm run start -w apps/api
+    environment:
+      <<: *db-env
+      PORT: '4800'
+    ports:
+      - '4800:4800'
+    healthcheck: *http-health
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      provider-sim:
+        condition: service_healthy
+
+  worker:
+    <<: *app
+    command: npm run start -w apps/worker
+    environment:
+      <<: *db-env
+      WORKER_ID: compose-worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      provider-sim:
+        condition: service_healthy
+
+  receiver:
+    <<: *app
+    command: npm run start -w apps/receiver
+    environment:
+      PORT: '4803'
+      WEBHOOK_SECRET: ${TALLY_WEBHOOK_SECRET:-whsec_demo_compose_only}
+    ports:
+      - '4803:4803'
+    healthcheck: *http-health
+
+  dashboard:
+    <<: *app
+    command: npm run start -w apps/dashboard
+    environment:
+      PORT: '4801'
+      API_URL: http://api:4800
+    ports:
+      - '4801:4801'
+    healthcheck: *http-health
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   tally-pgdata:

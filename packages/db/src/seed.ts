@@ -12,8 +12,14 @@ export const PLATFORM_ACCOUNT_TYPES = [
   'platform_revenue',
 ] as const;
 
+export interface SeedOptions {
+  /** Register a demo webhook endpoint (compose seeds one pointed at the receiver). */
+  webhookUrl?: string;
+  webhookSecret?: string;
+}
+
 /** Idempotent: safe to run any number of times. */
-export async function seed(client: ClientBase): Promise<void> {
+export async function seed(client: ClientBase, options: SeedOptions = {}): Promise<void> {
   await client.query('INSERT INTO merchants (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [
     DEMO_MERCHANT_NAME,
   ]);
@@ -23,6 +29,15 @@ export async function seed(client: ClientBase): Promise<void> {
        SELECT $1, $2
        WHERE NOT EXISTS (SELECT 1 FROM accounts WHERE type = $1 AND currency = $2)`,
       [type, SEED_CURRENCY],
+    );
+  }
+  if (options.webhookUrl !== undefined && options.webhookSecret !== undefined) {
+    await client.query(
+      `INSERT INTO webhook_endpoints (merchant_id, url, secret)
+       SELECT m.id, $1, $2 FROM merchants m
+       WHERE m.name = $3
+         AND NOT EXISTS (SELECT 1 FROM webhook_endpoints w WHERE w.url = $1)`,
+      [options.webhookUrl, options.webhookSecret, DEMO_MERCHANT_NAME],
     );
   }
 }
@@ -36,8 +51,17 @@ if (invokedDirectly) {
   });
   await client.connect();
   try {
-    await seed(client);
-    console.log('seeded: one merchant + platform account set');
+    const webhookUrl = process.env.SEED_WEBHOOK_URL;
+    const webhookSecret = process.env.SEED_WEBHOOK_SECRET;
+    await seed(
+      client,
+      webhookUrl !== undefined && webhookSecret !== undefined ? { webhookUrl, webhookSecret } : {},
+    );
+    console.log(
+      `seeded: one merchant + platform account set${
+        webhookUrl !== undefined ? ` + webhook endpoint -> ${webhookUrl}` : ''
+      }`,
+    );
   } finally {
     await client.end();
   }

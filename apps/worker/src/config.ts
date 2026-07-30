@@ -51,7 +51,7 @@ export interface WorkerConfig {
 export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
   return {
     databaseUrl: env.DATABASE_URL ?? 'postgres://tally:tally@localhost:5433/tally',
-    providerUrl: env.PROVIDER_URL ?? 'http://localhost:4000',
+    providerUrl: env.PROVIDER_URL ?? 'http://localhost:4802',
     providerTimeoutMs: Number(env.PROVIDER_TIMEOUT_MS ?? 5000),
     workerId: env.WORKER_ID ?? `${hostname()}-${process.pid}`,
     logLevel: env.LOG_LEVEL ?? 'info',

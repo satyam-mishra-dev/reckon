@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "migrate": "node-pg-migrate up -m migrations",
+    "migrate": "DATABASE_URL=${DATABASE_URL:-postgres://tally:tally@localhost:5433/tally} node-pg-migrate up -m migrations",
     "seed": "tsx src/seed.ts"
   },
   "devDependencies": {
