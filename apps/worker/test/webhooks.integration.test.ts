@@ -55,6 +55,7 @@ const testWorkerConfig = (databaseUrl: string): WorkerConfig => ({
   maxAttempts: MAX_ATTEMPTS,
   backoffBaseMs: 50,
   backoffCapMs: 60_000,
+  reconcileIntervalMs: 600_000, // this suite is about webhooks
   testJobs: false,
   rand: () => 0.5,
 });
@@ -184,11 +185,18 @@ describe('intent E2E -> signed webhook delivery', () => {
     ]);
     expect(state.duplicates).toBe(0);
 
-    const deliveries = await pool.query<DeliveryDbRow>(
-      `SELECT id, status, attempt, next_attempt_at, last_response_code FROM webhook_deliveries`,
-    );
-    expect(deliveries.rows).toHaveLength(2);
-    for (const d of deliveries.rows) {
+    // Wait for the DB rows too: the worker commits the 'delivered' mark AFTER
+    // the receiver's 200 response, so racing straight from the receiver state
+    // to this assertion can observe a still-pending row.
+    const deliveries = await until('both deliveries marked delivered', 10_000, async () => {
+      const result = await pool.query<DeliveryDbRow>(
+        `SELECT id, status, attempt, next_attempt_at, last_response_code FROM webhook_deliveries`,
+      );
+      return result.rows.length === 2 && result.rows.every((d) => d.status === 'delivered')
+        ? result.rows
+        : null;
+    });
+    for (const d of deliveries) {
       expect(d).toMatchObject({ status: 'delivered', attempt: 1, last_response_code: 200 });
     }
 

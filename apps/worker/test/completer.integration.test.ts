@@ -47,6 +47,7 @@ const testWorkerConfig = (databaseUrl: string): WorkerConfig => ({
   maxAttempts: 10,
   backoffBaseMs: 50,
   backoffCapMs: 60_000,
+  reconcileIntervalMs: 600_000, // this suite is about the completer
   testJobs: false,
   rand: undefined,
 });
