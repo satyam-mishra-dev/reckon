@@ -30,3 +30,39 @@ jobs:
 
       - name: Integration tests # Testcontainers uses the runner's Docker daemon
         run: npm run test:integration
+
+  # Quick chaos pass after the main suite: 300 intents with worker SIGKILLs,
+  # provider profile flips and webhook redeliveries, asserted by the
+  # reconciler. Postgres runs as a service container on host port 5433 (the
+  # port the chaos script expects); the script creates its own tally_chaos
+  # database there. The full 10k run stays local (`npm run chaos`).
+  chaos-quick:
+    runs-on: ubuntu-latest
+    needs: ci
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tally
+          POSTGRES_PASSWORD: tally
+          POSTGRES_DB: tally
+        ports:
+          - '5433:5432'
+        options: >-
+          --health-cmd "pg_isready -U tally -d tally"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Chaos (300 intents)
+        run: npm run chaos -- --intents 300 --duration-cap 300
