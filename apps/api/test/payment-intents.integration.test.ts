@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -9,6 +10,7 @@ import { seed } from '@tally/db';
 import { buildProviderSim, type SimCharge, type SimConfig } from '@tally/provider-sim';
 import { buildApp } from '../src/app.js';
 import type { ApiConfig } from '../src/config.js';
+import { runIntentPipeline } from '../src/pipeline.js';
 
 // Real Postgres via Testcontainers + the real provider-sim on an ephemeral
 // port — no mocked infrastructure. The API runs in-process via inject().
@@ -115,6 +117,7 @@ beforeAll(async () => {
     providerTimeoutMs: 1000,
     lockTimeoutMs: 90_000,
     logLevel: 'silent',
+    enableProviderConfig: false,
   };
   app = buildApp({ config });
   await app.ready();
@@ -353,5 +356,110 @@ describe('timeout-resume', () => {
       [intentId],
     );
     expect(ledger.rows.map((r) => r.kind)).toEqual(['charge', 'fee']);
+  });
+});
+
+describe('stale-lock takeover fencing (owner token + CAS)', () => {
+  // The gap the crash/kill tests miss: the original actor never dies. It stalls
+  // (here: blocked inside a slow provider call) past the lock timeout while
+  // STILL ALIVE, a second actor steals the stale lock and finishes the payment,
+  // and then the original resumes. Without owner-token fencing (audit C1/C2) the
+  // resumed original would advance the pointer it no longer owns and post a
+  // second succeeded event (duplicate webhook). With fencing it aborts cleanly.
+
+  async function waitForRecoveryPoint(key: string, rp: string, timeoutMs: number): Promise<string> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const r = await pool.query<{ id: string; recovery_point: string }>(
+        'SELECT id, recovery_point FROM idempotency_keys WHERE key = $1',
+        [key],
+      );
+      const row = r.rows[0];
+      if (row?.recovery_point === rp) return row.id;
+      if (Date.now() > deadline) {
+        throw new Error(`key ${key} never reached ${rp} (at ${row?.recovery_point ?? 'missing'})`);
+      }
+      await sleep(10);
+    }
+  }
+
+  it('fences the still-alive original after a stale-lock steal: no double-post, no wedge', async () => {
+    // 600ms provider latency holds the original request inside the charge; a
+    // 200ms lock timeout makes its lock stealable while it is still in flight.
+    await setSim({ latency_base_ms: 600 });
+    const shortApp = buildApp({ config: { ...config, lockTimeoutMs: 200, providerTimeoutMs: 5000 } });
+    await shortApp.ready();
+    try {
+      const key = 'stale-steal-1';
+      const payload = { amount_minor: 9_100, currency: 'USD' };
+
+      // P1 (original, owner A): creates the intent, then blocks in the provider
+      // call holding the lock at recovery_point = intent_created.
+      const p1Promise = postIntent(shortApp, key, payload);
+      const keyId = await waitForRecoveryPoint(key, 'intent_created', 5_000);
+
+      // Let the lock go stale while P1 is provably still alive in the call.
+      await sleep(260);
+
+      // P2 (owner B, completer/reconciler-style): steals the stale lock with a
+      // fresh owner token and drives the SAME resume loop to finished.
+      const ownerB = randomUUID();
+      const took = await pool.query<{ id: string }>(
+        `UPDATE idempotency_keys SET locked_at = now(), locked_by = $2
+         WHERE id = $1 AND recovery_point <> 'finished'
+           AND (locked_at IS NULL OR locked_at < now() - make_interval(secs => 0.2))
+         RETURNING id`,
+        [keyId, ownerB],
+      );
+      expect(took.rows).toHaveLength(1); // the steal happened while A was alive
+
+      const bResult = await runIntentPipeline(
+        { pool, providerUrl, providerTimeoutMs: 5_000 },
+        keyId,
+        ownerB,
+      );
+      expect(bResult.code).toBe(200); // B completed the payment
+
+      // P1 resumes from its provider call: its guarded provider_charged advance
+      // finds locked_by = B, throws OwnershipLostError, and replays finished
+      // (or a transient 409, which a real client retries into the replay).
+      let p1 = await p1Promise;
+      let tries = 0;
+      while (p1.statusCode === 409) {
+        expect(++tries).toBeLessThan(100);
+        await sleep(20);
+        p1 = await postIntent(shortApp, key, payload);
+      }
+      expect(p1.statusCode).toBe(200); // clean terminal answer — never a 500 wedge
+      expect(p1.json<IntentResponse>().status).toBe('succeeded');
+
+      // THE PROOF. Exactly one of everything — P1 posted nothing after losing
+      // the lock: one provider charge, one intent, ONE succeeded event (so the
+      // merchant sees one webhook, not two), a balanced charge+fee ledger.
+      expect(await truthCharges(9_100)).toHaveLength(1);
+      const intents = await pool.query<{ id: string; n: string }>(
+        `SELECT id, count(*) OVER () AS n FROM payment_intents WHERE amount_minor = 9100`,
+      );
+      expect(intents.rows).toHaveLength(1);
+      const intentId = intents.rows[0]?.id ?? '';
+
+      const succeededEvents = await pool.query<{ n: string }>(
+        `SELECT count(*) AS n FROM events
+         WHERE type = 'payment_intent.succeeded' AND payload ->> 'intent_id' = $1`,
+        [intentId],
+      );
+      expect(succeededEvents.rows[0]?.n).toBe('1'); // <- fails without owner fencing
+
+      const ledger = await pool.query<{ kind: string }>(
+        'SELECT kind FROM ledger_transactions WHERE intent_id = $1 ORDER BY kind',
+        [intentId],
+      );
+      expect(ledger.rows.map((r) => r.kind)).toEqual(['charge', 'fee']);
+
+      const finalKey = await keyRow(key);
+      expect(finalKey).toMatchObject({ recovery_point: 'finished', locked_at: null });
+    } finally {
+      await shortApp.close();
+    }
   });
 });
