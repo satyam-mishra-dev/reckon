@@ -20,7 +20,7 @@ export function money(minor, currency = 'USD') {
   const negative = s.startsWith('-');
   const digits = (negative ? s.slice(1) : s).padStart(3, '0');
   const major = digits.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  const symbol = currency === 'USD' ? '$' : `${currency} `;
+  const symbol = currency === 'USD' ? '$' : `${esc(currency)} `;
   return `${negative ? '−' : ''}${symbol}${major}.${digits.slice(-2)}`;
 }
 

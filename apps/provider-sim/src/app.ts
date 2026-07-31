@@ -99,7 +99,9 @@ export function buildProviderSim(): FastifyInstance {
           required: ['amount_minor', 'currency'],
           additionalProperties: false,
           properties: {
-            amount_minor: { type: 'integer', minimum: 1 },
+            // Cap at 2^53-1: above it a JS-number amount loses precision and a
+            // bigint charge would misrecord (audit M1, mirrors the API schema).
+            amount_minor: { type: 'integer', minimum: 1, maximum: 9_007_199_254_740_991 },
             currency: { type: 'string', minLength: 3, maxLength: 3 },
           },
         },

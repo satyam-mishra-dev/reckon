@@ -28,6 +28,8 @@ interface PageQuery {
 export interface ReadModelOptions {
   providerUrl: string;
   providerTimeoutMs: number;
+  /** Demo-only gate for the provider-config passthrough (audit M4). */
+  enableProviderConfig: boolean;
 }
 
 export function registerReadModels(
@@ -248,6 +250,12 @@ export function registerReadModels(
   // ---------------------------------------------------------------------------
   // Provider-sim config passthrough, so the playground can flip failure modes
   // without talking to the provider directly (the browser only knows the API).
+  //
+  // DEMO-ONLY CONTROL (audit M4): this forwards an arbitrary body — including
+  // callback_url, an SSRF lever — to the provider. It is unauthenticated, so it
+  // is gated behind ENABLE_PROVIDER_CONFIG=1 (set only in dev/compose). With the
+  // flag off both routes 404. With it on, callback_url is still validated to a
+  // well-formed http(s) URL. See DECISIONS.md ("Provider-config passthrough").
   // ---------------------------------------------------------------------------
 
   async function forwardProviderConfig(
@@ -264,6 +272,7 @@ export function registerReadModels(
   }
 
   app.get('/v1/provider/config', async (request, reply) => {
+    if (!options.enableProviderConfig) return reply.code(404).send({ error: 'not_found' });
     try {
       const result = await forwardProviderConfig('GET');
       return reply.code(result.code).send(result.body);
@@ -277,6 +286,17 @@ export function registerReadModels(
     '/v1/provider/config',
     { schema: { body: { type: 'object' } } },
     async (request, reply) => {
+      if (!options.enableProviderConfig) return reply.code(404).send({ error: 'not_found' });
+      const callbackUrl = request.body.callback_url;
+      if (
+        callbackUrl !== undefined &&
+        callbackUrl !== null &&
+        (typeof callbackUrl !== 'string' || !/^https?:\/\/\S+$/i.test(callbackUrl))
+      ) {
+        return reply
+          .code(400)
+          .send({ error: 'invalid_callback_url', message: 'callback_url must be an http(s) URL' });
+      }
       try {
         // The provider validates its own config schema; we just forward.
         const result = await forwardProviderConfig('PUT', request.body);
