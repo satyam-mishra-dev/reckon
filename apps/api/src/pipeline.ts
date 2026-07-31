@@ -46,6 +46,20 @@ export interface PipelineResponse {
   retryAfterSeconds?: number;
 }
 
+/**
+ * Thrown when a guarded pointer/lock UPDATE affects 0 rows: another actor took
+ * over this key's stale lock (locked_by no longer matches) or advanced the
+ * recovery_point past what we expected. The resume loop catches it, re-reads
+ * the key, and replays the finished response or answers 409 — it never proceeds
+ * to double-post or regress the pointer (audit C1/C2, the fencing invariant).
+ */
+class OwnershipLostError extends Error {
+  constructor() {
+    super('idempotency key ownership lost (stale-lock takeover)');
+    this.name = 'OwnershipLostError';
+  }
+}
+
 interface KeyRow {
   id: string;
   merchant_id: string;
@@ -95,7 +109,10 @@ async function inTx<T>(client: PoolClient, fn: () => Promise<T>): Promise<T> {
     await client.query('COMMIT');
     return result;
   } catch (err) {
-    await client.query('ROLLBACK');
+    // Guard the ROLLBACK: on a dead connection it throws, and an unguarded
+    // throw here would REPLACE the original error — corrupting the
+    // retryable-SQLSTATE check in runIntentPipeline (audit C7). Preserve `err`.
+    await client.query('ROLLBACK').catch(() => undefined);
     throw err;
   }
 }
@@ -205,10 +222,19 @@ async function chargeProvider(
 
 // ---------------------------------------------------------------------------
 // Atomic phases. Each commits {its writes + recovery_point advance} in one TX.
+//
+// FENCING (audit C1/C2): every phase's pointer/lock UPDATE is guarded by
+// `AND locked_by = <owner> AND recovery_point = <expected>` (create phase also
+// `AND intent_id IS NULL`). The guard is the LAST statement in the phase TX, so
+// if it affects 0 rows — another actor stole the stale lock or advanced the
+// pointer — we throw OwnershipLostError and the whole phase (including any
+// stale-state effects like a spurious outbox event) rolls back. applyTransition
+// runs on the pre-TX-loaded (stale) intent state, always a legal edge for the
+// phase, so it never throws IllegalTransition here; the guard is the sole gate.
 // ---------------------------------------------------------------------------
 
 /** started -> intent_created: create the intent row + creation outbox event. */
-async function phaseCreateIntent(client: PoolClient, key: KeyRow): Promise<void> {
+async function phaseCreateIntent(client: PoolClient, key: KeyRow, owner: string): Promise<void> {
   const params = key.request_params;
   if (params === null) throw new Error(`key ${key.id} has no stored request_params`);
   const intentId = ulid();
@@ -228,10 +254,13 @@ async function phaseCreateIntent(client: PoolClient, key: KeyRow): Promise<void>
         status: 'created',
       }),
     ]);
-    await client.query(
-      `UPDATE idempotency_keys SET recovery_point = 'intent_created', intent_id = $2 WHERE id = $1`,
-      [key.id, intentId],
+    const advanced = await client.query(
+      `UPDATE idempotency_keys SET recovery_point = 'intent_created', intent_id = $2
+       WHERE id = $1 AND locked_by = $3 AND recovery_point = 'started' AND intent_id IS NULL
+       RETURNING id`,
+      [key.id, intentId, owner],
     );
+    if (advanced.rows.length === 0) throw new OwnershipLostError();
   });
 }
 
@@ -240,6 +269,7 @@ async function phaseProviderCharged(
   client: PoolClient,
   key: KeyRow,
   providerRef: string,
+  owner: string,
 ): Promise<void> {
   await inTx(client, async () => {
     // Status stays created/processing on purpose: `succeeded` means "ledger
@@ -248,10 +278,13 @@ async function phaseProviderCharged(
       `UPDATE payment_intents SET provider_ref = $2, updated_at = now() WHERE id = $1`,
       [key.intent_id, providerRef],
     );
-    await client.query(
-      `UPDATE idempotency_keys SET recovery_point = 'provider_charged' WHERE id = $1`,
-      [key.id],
+    const advanced = await client.query(
+      `UPDATE idempotency_keys SET recovery_point = 'provider_charged'
+       WHERE id = $1 AND locked_by = $2 AND recovery_point = 'intent_created'
+       RETURNING id`,
+      [key.id, owner],
     );
+    if (advanced.rows.length === 0) throw new OwnershipLostError();
   });
 }
 
@@ -261,6 +294,7 @@ async function phaseDeclined(
   key: KeyRow,
   intent: IntentRow,
   failureCode: string,
+  owner: string,
 ): Promise<void> {
   await inTx(client, async () => {
     await applyTransition(client, intent, { type: 'PROVIDER_DECLINED', failureCode });
@@ -272,12 +306,15 @@ async function phaseDeclined(
       currency: intent.currency,
       created_at: intent.created_at.toISOString(),
     };
-    await client.query(
+    const finished = await client.query(
       `UPDATE idempotency_keys
-       SET recovery_point = 'finished', response_code = 402, response_body = $2, locked_at = NULL
-       WHERE id = $1`,
-      [key.id, JSON.stringify(body)],
+       SET recovery_point = 'finished', response_code = 402, response_body = $2,
+           locked_at = NULL, locked_by = NULL
+       WHERE id = $1 AND locked_by = $3 AND recovery_point = 'intent_created'
+       RETURNING id`,
+      [key.id, JSON.stringify(body), owner],
     );
+    if (finished.rows.length === 0) throw new OwnershipLostError();
   });
 }
 
@@ -291,15 +328,22 @@ async function phaseProviderTimeout(
   client: PoolClient,
   key: KeyRow,
   intent: IntentRow,
+  owner: string,
 ): Promise<void> {
   await inTx(client, async () => {
     await applyTransition(client, intent, { type: 'PROVIDER_TIMEOUT' });
-    await client.query(`UPDATE idempotency_keys SET locked_at = NULL WHERE id = $1`, [key.id]);
+    const released = await client.query(
+      `UPDATE idempotency_keys SET locked_at = NULL, locked_by = NULL
+       WHERE id = $1 AND locked_by = $2 AND recovery_point = 'intent_created'
+       RETURNING id`,
+      [key.id, owner],
+    );
+    if (released.rows.length === 0) throw new OwnershipLostError();
   });
 }
 
 /** provider_charged -> ledger_posted: post charge + fee atomically with the pointer. */
-async function phasePostLedger(client: PoolClient, key: KeyRow): Promise<void> {
+async function phasePostLedger(client: PoolClient, key: KeyRow, owner: string): Promise<void> {
   const intent = await loadIntent(client, key);
   const amount = BigInt(intent.amount_minor);
   const fee = chargeFeeMinor(amount);
@@ -332,15 +376,18 @@ async function phasePostLedger(client: PoolClient, key: KeyRow): Promise<void> {
         { accountId: accountId('platform_revenue'), direction: 'credit', amountMinor: fee },
       ],
     });
-    await client.query(
-      `UPDATE idempotency_keys SET recovery_point = 'ledger_posted' WHERE id = $1`,
-      [key.id],
+    const advanced = await client.query(
+      `UPDATE idempotency_keys SET recovery_point = 'ledger_posted'
+       WHERE id = $1 AND locked_by = $2 AND recovery_point = 'provider_charged'
+       RETURNING id`,
+      [key.id, owner],
     );
+    if (advanced.rows.length === 0) throw new OwnershipLostError();
   });
 }
 
 /** ledger_posted -> finished: succeed the intent, store the response, unlock. */
-async function phaseFinish(client: PoolClient, key: KeyRow): Promise<void> {
+async function phaseFinish(client: PoolClient, key: KeyRow, owner: string): Promise<void> {
   const intent = await loadIntent(client, key);
   const providerRef = intent.provider_ref;
   if (providerRef === null)
@@ -355,24 +402,36 @@ async function phaseFinish(client: PoolClient, key: KeyRow): Promise<void> {
       provider_ref: providerRef,
       created_at: intent.created_at.toISOString(),
     };
-    await client.query(
+    const finished = await client.query(
       `UPDATE idempotency_keys
-       SET recovery_point = 'finished', response_code = 200, response_body = $2, locked_at = NULL
-       WHERE id = $1`,
-      [key.id, JSON.stringify(body)],
+       SET recovery_point = 'finished', response_code = 200, response_body = $2,
+           locked_at = NULL, locked_by = NULL
+       WHERE id = $1 AND locked_by = $3 AND recovery_point = 'ledger_posted'
+       RETURNING id`,
+      [key.id, JSON.stringify(body), owner],
     );
+    if (finished.rows.length === 0) throw new OwnershipLostError();
   });
 }
 
 /**
- * One step of the resume loop. Returns a response to send, or null to loop
- * again (state advanced; reload and continue).
+ * One step of the resume loop. The provider call is the only non-DB effect and
+ * needs no client — so 'intent_created' returns `{ kind: 'charge' }` and
+ * runIntentPipeline releases the pooled client across the call (audit O6).
+ * Everything else runs a phase and returns `{ kind: 'advance' }`, or the stored
+ * response at `finished`.
  */
+type StepResult =
+  | { kind: 'response'; response: PipelineResponse }
+  | { kind: 'advance' }
+  | { kind: 'charge'; intent: IntentRow };
+
 async function step(
   client: PoolClient,
   deps: PipelineDeps,
   keyId: string,
-): Promise<PipelineResponse | null> {
+  owner: string,
+): Promise<StepResult> {
   const key = await loadKey(client, keyId);
   switch (key.recovery_point) {
     case 'finished': {
@@ -382,84 +441,151 @@ async function step(
       if (key.response_code === null) {
         throw new Error(`key ${key.id} is finished but has no stored response`);
       }
-      return { code: key.response_code, body: key.response_body };
+      return { kind: 'response', response: { code: key.response_code, body: key.response_body } };
     }
     case 'started': {
-      await phaseCreateIntent(client, key);
+      await phaseCreateIntent(client, key, owner);
       deps.faultHook?.('intent_created');
-      return null;
+      return { kind: 'advance' };
     }
     case 'intent_created': {
       const intent = await loadIntent(client, key);
       if (intent.status === 'requires_retry') {
         // Re-entering after a provider timeout: record the retry attempt
         // through the machine before touching the provider again. No pointer
-        // advance — crashing here just repeats a no-op-safe transition.
-        await inTx(client, () => applyTransition(client, intent, { type: 'RETRY_SCHEDULED' }));
-        return null;
+        // advance, but assert ownership (and refresh the lease) so a stalled
+        // stale actor can't re-emit a processing event it no longer owns.
+        await inTx(client, async () => {
+          await applyTransition(client, intent, { type: 'RETRY_SCHEDULED' });
+          const owned = await client.query(
+            `UPDATE idempotency_keys SET locked_at = now()
+             WHERE id = $1 AND locked_by = $2 AND recovery_point = 'intent_created'
+             RETURNING id`,
+            [key.id, owner],
+          );
+          if (owned.rows.length === 0) throw new OwnershipLostError();
+        });
+        return { kind: 'advance' };
       }
-      // Foreign state mutation: BETWEEN phases, never inside a TX. The
-      // derived key makes provider-side dedupe cover our retries.
-      const result = await chargeProvider(deps, `tally-${key.id}`, intent);
-      if (result.kind === 'accepted') {
-        await phaseProviderCharged(client, key, result.providerRef);
-        deps.faultHook?.('provider_charged');
-        return null;
-      }
-      if (result.kind === 'declined') {
-        await phaseDeclined(client, key, intent, result.code);
-        deps.faultHook?.('finished');
-        return null;
-      }
-      await phaseProviderTimeout(client, key, intent);
-      return {
-        code: 503,
-        body: {
-          error: 'provider_unavailable',
-          message: 'provider timed out; retry with the same Idempotency-Key to resume',
-          intent_id: intent.id,
-          status: 'requires_retry',
-        },
-        retryAfterSeconds: 1,
-      };
+      return { kind: 'charge', intent };
     }
     case 'provider_charged': {
-      await phasePostLedger(client, key);
+      await phasePostLedger(client, key, owner);
       deps.faultHook?.('ledger_posted');
-      return null;
+      return { kind: 'advance' };
     }
     case 'ledger_posted': {
-      await phaseFinish(client, key);
+      await phaseFinish(client, key, owner);
       deps.faultHook?.('finished');
-      return null;
+      return { kind: 'advance' };
     }
   }
 }
 
+/** Apply a provider outcome after the client was re-checked out post-charge. */
+async function applyChargeResult(
+  client: PoolClient,
+  deps: PipelineDeps,
+  key: KeyRow,
+  intent: IntentRow,
+  result: ProviderResult,
+  owner: string,
+): Promise<PipelineResponse | null> {
+  if (result.kind === 'accepted') {
+    await phaseProviderCharged(client, key, result.providerRef, owner);
+    deps.faultHook?.('provider_charged');
+    return null;
+  }
+  if (result.kind === 'declined') {
+    await phaseDeclined(client, key, intent, result.code, owner);
+    deps.faultHook?.('finished');
+    return null;
+  }
+  await phaseProviderTimeout(client, key, intent, owner);
+  return {
+    code: 503,
+    body: {
+      error: 'provider_unavailable',
+      message: 'provider timed out; retry with the same Idempotency-Key to resume',
+      intent_id: intent.id,
+      status: 'requires_retry',
+    },
+    retryAfterSeconds: 1,
+  };
+}
+
+/** Ownership lost mid-flight: re-read the key and answer replay-or-409. */
+async function ownershipLostResponse(
+  client: PoolClient,
+  keyId: string,
+): Promise<PipelineResponse> {
+  const key = await loadKey(client, keyId);
+  if (key.recovery_point === 'finished' && key.response_code !== null) {
+    return { code: key.response_code, body: key.response_body };
+  }
+  return {
+    code: 409,
+    body: {
+      error: 'request_in_progress',
+      message: 'another actor is completing this request; retry to replay the result',
+    },
+    retryAfterSeconds: 1,
+  };
+}
+
 /**
- * The single reusable resume loop: switches on recovery_point and executes
- * only the remaining phases. Caller must hold the key's lock (locked_at).
- * Serialization/deadlock errors (40001/40P01) retry the step — phases roll
- * back atomically and re-derive state on re-entry.
+ * The single reusable resume loop: switches on recovery_point and executes only
+ * the remaining phases. `owner` is the caller's lock token (audit C1/C2): every
+ * phase advance is fenced by it, and a guarded 0-row update aborts cleanly via
+ * OwnershipLostError -> replay-or-409 instead of double-posting. Caller must
+ * hold the key's lock (locked_at + locked_by = owner).
+ * Serialization/deadlock errors (40001/40P01) retry the step — phases roll back
+ * atomically and re-derive state on re-entry.
  */
 export async function runIntentPipeline(
   deps: PipelineDeps,
   keyId: string,
+  owner: string,
 ): Promise<PipelineResponse> {
-  const client = await deps.pool.connect();
+  let client: PoolClient | null = null;
   try {
     let sqlRetries = 0;
     for (;;) {
+      if (client === null) client = await deps.pool.connect();
       try {
-        const response = await step(client, deps, keyId);
-        if (response !== null) return response;
+        const outcome = await step(client, deps, keyId, owner);
+        if (outcome.kind === 'response') return outcome.response;
+        if (outcome.kind === 'charge') {
+          // Release the pooled client across the up-to-timeout provider call —
+          // holding it is the capacity cliff of audit O6. State is re-derived
+          // from the DB on re-checkout, and the phase owner+CAS guard catches
+          // any takeover that happened while the call was in flight.
+          client.release();
+          client = null;
+          const result = await chargeProvider(deps, `tally-${keyId}`, outcome.intent);
+          client = await deps.pool.connect();
+          const key = await loadKey(client, keyId);
+          const response = await applyChargeResult(
+            client,
+            deps,
+            key,
+            outcome.intent,
+            result,
+            owner,
+          );
+          if (response !== null) return response;
+        }
         sqlRetries = 0;
       } catch (err) {
+        if (err instanceof OwnershipLostError) {
+          if (client === null) client = await deps.pool.connect();
+          return await ownershipLostResponse(client, keyId);
+        }
         if (isRetryableSqlError(err) && ++sqlRetries < MAX_SQL_RETRIES) continue;
         throw err;
       }
     }
   } finally {
-    client.release();
+    if (client !== null) client.release();
   }
 }

@@ -24,9 +24,23 @@ interface StoredResponseRow {
   response_body: unknown;
 }
 
+// Largest integer JS carries exactly (2^53 - 1). Above it, amount_minor (a JS
+// number on the wire) silently loses precision; above 2^63 the bigint column
+// overflows and the key wedges at 'started'. The schema caps it here (audit
+// M1/O1). The minimum of 50 keeps the +30 fixed fee below the charge — Stripe's
+// $0.50 floor, re-derived (audit M2, DECISIONS: "Minimum charge amount").
+const MAX_AMOUNT_MINOR = 9_007_199_254_740_991;
+const MIN_AMOUNT_MINOR = 50;
+
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   const { config, faultHook } = options;
-  const pool = new Pool({ connectionString: config.databaseUrl });
+  const pool = new Pool({
+    connectionString: config.databaseUrl,
+    connectionTimeoutMillis: 10_000,
+    statement_timeout: 30_000,
+    query_timeout: 30_000,
+    keepAlive: true,
+  });
 
   const app = Fastify({
     // Fastify's built-in pino: structured JSON logs, reqId on every request line.
@@ -35,6 +49,13 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       const header = request.headers['x-request-id'];
       return typeof header === 'string' && header.length > 0 ? header : randomUUID();
     },
+  });
+
+  // A single idle-client error (PG restart/failover) would otherwise crash the
+  // whole process with an unhandled 'error' event (audit C4/O2). Log and let
+  // the pool reconnect on next use.
+  pool.on('error', (err) => {
+    app.log.error({ err }, 'postgres pool idle client error');
   });
 
   app.addHook('onResponse', async (request, reply) => {
@@ -93,11 +114,27 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           required: ['amount_minor', 'currency'],
           additionalProperties: false,
           properties: {
-            amount_minor: { type: 'integer', minimum: 1 },
+            amount_minor: {
+              type: 'integer',
+              minimum: MIN_AMOUNT_MINOR,
+              maximum: MAX_AMOUNT_MINOR,
+            },
             // Only USD accounts are seeded; widen when multi-currency lands.
             currency: { type: 'string', enum: ['USD'] },
           },
         },
+      },
+      // ajv coerceTypes (Fastify default, needed for querystring ints elsewhere)
+      // would turn {amount_minor: true} -> 1 and "100" -> 100 into real charges.
+      // Reject a present-but-non-numeric amount BEFORE coercion (audit M3); the
+      // schema then enforces integer/range on genuine numbers.
+      preValidation: async (request, reply) => {
+        const raw = (request.body as { amount_minor?: unknown } | null | undefined)?.amount_minor;
+        if (raw !== undefined && typeof raw !== 'number') {
+          return reply
+            .code(400)
+            .send({ error: 'invalid_amount', message: 'amount_minor must be a JSON number' });
+        }
       },
     },
     async (request, reply) => {
@@ -110,14 +147,19 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       const requestHash = createHash('sha256').update(paramsJson).digest('hex');
       const merchant = await getMerchantId();
 
+      // This request's lock owner token: stamped in locked_by wherever we take
+      // the lock, then required by every pipeline unlock/pointer advance so a
+      // stale-lock takeover fences this actor out (audit C1/C2).
+      const owner = randomUUID();
+
       // Upsert the key row, taking the lock on insert. UNIQUE(merchant_id, key)
       // makes exactly one concurrent first request the owner.
       const inserted = await pool.query<{ id: string }>(
-        `INSERT INTO idempotency_keys (merchant_id, key, request_hash, request_params, locked_at)
-         VALUES ($1, $2, $3, $4, now())
+        `INSERT INTO idempotency_keys (merchant_id, key, request_hash, request_params, locked_at, locked_by)
+         VALUES ($1, $2, $3, $4, now(), $5)
          ON CONFLICT (merchant_id, key) DO NOTHING
          RETURNING id`,
-        [merchant, idempotencyKey, requestHash, paramsJson],
+        [merchant, idempotencyKey, requestHash, paramsJson, owner],
       );
 
       let keyId: string;
@@ -144,14 +186,15 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         if (row.recovery_point === 'finished' && row.response_code !== null) {
           return reply.code(row.response_code).send(row.response_body);
         }
-        // Take the lock iff it is free or stale (dead process takeover).
+        // Take the lock iff it is free or stale (dead process takeover),
+        // stamping our owner token so any prior stalled holder is fenced out.
         const locked = await pool.query<{ id: string }>(
-          `UPDATE idempotency_keys SET locked_at = now()
+          `UPDATE idempotency_keys SET locked_at = now(), locked_by = $3
            WHERE id = $1
              AND recovery_point <> 'finished'
              AND (locked_at IS NULL OR locked_at < now() - make_interval(secs => $2))
            RETURNING id`,
-          [row.id, config.lockTimeoutMs / 1000],
+          [row.id, config.lockTimeoutMs / 1000, owner],
         );
         if (locked.rows[0] === undefined) {
           // Lost the race: either a live process holds a fresh lock, or the
@@ -187,6 +230,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
             faultHook,
           },
           keyId,
+          owner,
         );
         if (result.retryAfterSeconds !== undefined) {
           reply.header('retry-after', String(result.retryAfterSeconds));
@@ -195,13 +239,14 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       } catch (err) {
         request.log.error({ err, keyId }, 'payment intent pipeline failed');
         // Clear the lock on this exit path too, so a client retry can resume
-        // immediately. (A real crash skips this — the stale-lock takeover
-        // above covers that case after lockTimeoutMs.)
+        // immediately — but ONLY if we still own it (locked_by = owner). A
+        // stale-lock takeover already handed the key to another actor; clearing
+        // its fresh lock would let a third actor run concurrently (audit C2).
         try {
           await pool.query(
-            `UPDATE idempotency_keys SET locked_at = NULL
-             WHERE id = $1 AND recovery_point <> 'finished'`,
-            [keyId],
+            `UPDATE idempotency_keys SET locked_at = NULL, locked_by = NULL
+             WHERE id = $1 AND locked_by = $2 AND recovery_point <> 'finished'`,
+            [keyId, owner],
           );
         } catch (unlockErr) {
           request.log.error({ err: unlockErr, keyId }, 'failed to release idempotency lock');
@@ -333,6 +378,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   registerReadModels(app, pool, {
     providerUrl: config.providerUrl,
     providerTimeoutMs: config.providerTimeoutMs,
+    enableProviderConfig: config.enableProviderConfig,
   });
 
   // Reconciliation reports (brief §4.8) — one row per pass, newest first.
