@@ -1,9 +1,11 @@
+import { utimes, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Pool } from 'pg';
 import type { Logger } from 'pino';
 import { claimJobs, failJob, heartbeatJobs, sweepExpired, type JobRow } from '@tally/core';
 import type { WorkerConfig } from './config.js';
 import {
+  deadLetterOrphanedDeliveries,
   enqueueReconcileJob,
   enqueueStuckKeys,
   fanOutEvents,
@@ -27,7 +29,17 @@ export interface RunningWorker {
 type Handler = (ctx: HandlerContext, job: JobRow) => Promise<void>;
 
 export function startWorker(config: WorkerConfig, log: Logger): RunningWorker {
-  const pool = new Pool({ connectionString: config.databaseUrl });
+  const pool = new Pool({
+    connectionString: config.databaseUrl,
+    connectionTimeoutMillis: 10_000,
+    statement_timeout: 30_000,
+    query_timeout: 30_000,
+    keepAlive: true,
+  });
+  // A single idle-client error (PG restart/failover) would otherwise crash the
+  // process via an unhandled 'error' event (audit C4/O2). Log; the pool
+  // reconnects on next use.
+  pool.on('error', (err) => log.error({ err }, 'postgres pool idle client error'));
   const ctx: HandlerContext = { pool, config, log };
 
   const handlers = new Map<string, Handler>([
@@ -37,6 +49,25 @@ export function startWorker(config: WorkerConfig, log: Logger): RunningWorker {
   ]);
   if (config.testJobs) handlers.set('test_sleep', handleTestSleep);
   const kinds = [...handlers.keys()];
+
+  // Liveness file for the compose healthcheck (audit O2): the worker has no HTTP
+  // port, so it touches this file every poll and the healthcheck asserts a
+  // recent mtime — a black-holed PG connection that wedges the poll loop stops
+  // the touches and compose restarts the container.
+  let livenessInit = false;
+  async function touchLiveness(): Promise<void> {
+    try {
+      if (!livenessInit) {
+        await writeFile(config.livenessFile, 'alive');
+        livenessInit = true;
+      } else {
+        const now = new Date();
+        await utimes(config.livenessFile, now, now);
+      }
+    } catch (err) {
+      log.warn({ err, file: config.livenessFile }, 'liveness touch failed');
+    }
+  }
 
   const inFlight = new Set<string>();
   let stopping = false;
@@ -80,7 +111,9 @@ export function startWorker(config: WorkerConfig, log: Logger): RunningWorker {
 
   async function pollLoop(): Promise<void> {
     let idleMs = config.pollMinMs;
+    await touchLiveness(); // healthy from the first tick, before any work
     while (!stopping) {
+      await touchLiveness();
       let jobs: JobRow[] = [];
       try {
         jobs = await claimJobs(pool, { kinds, workerId: config.workerId, batch: config.batchSize });
@@ -142,6 +175,22 @@ export function startWorker(config: WorkerConfig, log: Logger): RunningWorker {
         maxAttempts: config.maxAttempts,
       });
       if (swept.length > 0) log.warn({ swept }, 'swept expired job leases');
+      // A deliver_webhook job the sweeper just dead-lettered leaves its mirrored
+      // delivery stranded 'pending' (audit C3) — reconcile those to 'dead'.
+      const healed = await deadLetterOrphanedDeliveries(pool);
+      if (healed > 0) log.warn({ healed }, 'dead-lettered deliveries stranded by dead jobs');
+      // A pending job of a kind no worker registers would sit forever and stall
+      // the drain (audit O5) — the claim filter never returns it, so the
+      // unknown-handler branch is unreachable. Dead-letter them here.
+      const orphaned = await pool.query<{ id: string; kind: string }>(
+        `UPDATE jobs SET status = 'dead', locked_at = NULL
+         WHERE status = 'pending' AND kind <> ALL($1::text[])
+         RETURNING id, kind`,
+        [kinds],
+      );
+      if (orphaned.rows.length > 0) {
+        log.error({ jobs: orphaned.rows }, 'dead-lettered jobs of unhandled kind');
+      }
     }),
     periodically('outbox', config.outboxIntervalMs, async () => {
       const dispatched = await fanOutEvents(pool, config.outboxBatch);

@@ -42,7 +42,9 @@ const testWorkerConfig = (databaseUrl: string): WorkerConfig => ({
   outboxBatch: 50,
   completerIntervalMs: 100,
   completerGraceMs: 100,
+  completerMaxAttempts: 25,
   idempotencyLockTimeoutMs: 90_000,
+  livenessFile: '/tmp/tally-test-completer-alive',
   webhookTimeoutMs: 2000,
   maxAttempts: 10,
   backoffBaseMs: 50,
@@ -81,6 +83,7 @@ beforeAll(async () => {
       providerTimeoutMs: 1000,
       lockTimeoutMs: 90_000,
       logLevel: 'silent',
+      enableProviderConfig: false,
     },
     faultHook: (committed) => {
       if (committed === 'intent_created') throw new Error('simulated crash after phase 1');

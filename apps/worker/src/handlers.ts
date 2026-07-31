@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Pool, PoolClient } from 'pg';
 import type { Logger } from 'pino';
@@ -9,7 +10,7 @@ import {
   type Queryable,
   type RetryOptions,
 } from '@tally/core';
-import { runIntentPipeline } from '@tally/api/pipeline';
+import { applyTransition, runIntentPipeline, type IntentRow } from '@tally/api/pipeline';
 import type { WorkerConfig } from './config.js';
 import { runReconciliation } from './reconciler.js';
 
@@ -197,6 +198,27 @@ export async function handleDeliverWebhook(ctx: HandlerContext, job: JobRow): Pr
   });
 }
 
+/**
+ * Self-heal deliveries stranded 'pending' by a sweep-dead-lettered job (audit
+ * C3): when the sweeper moves a deliver_webhook job to 'dead' (visibility
+ * timeout exhausted), handleDeliverWebhook never runs again to mirror the dead
+ * state onto the delivery row, so it would sit 'pending' forever with no live
+ * job and requeue (dead-only) can't reach it. Mark those deliveries dead so the
+ * DLQ view and requeue endpoint can act on them. Returns the number healed.
+ */
+export async function deadLetterOrphanedDeliveries(db: Queryable): Promise<number> {
+  const result = await db.query<{ id: string }>(
+    `UPDATE webhook_deliveries d SET status = 'dead'
+     FROM jobs j
+     WHERE j.kind = 'deliver_webhook'
+       AND j.status = 'dead'
+       AND (j.payload ->> 'delivery_id')::uuid = d.id
+       AND d.status = 'pending'
+     RETURNING d.id`,
+  );
+  return result.rows.length;
+}
+
 // ---------------------------------------------------------------------------
 // complete_intent (the brandur "completer": re-drive a stuck idempotency key
 // through the exact same resume loop the API uses).
@@ -223,14 +245,16 @@ export async function handleCompleteIntent(ctx: HandlerContext, job: JobRow): Pr
   }
 
   // Take the key lock iff free or stale — the same takeover rule as the API,
-  // so the completer never races a live request on the same key.
-  const locked = await pool.query<{ id: string }>(
-    `UPDATE idempotency_keys SET locked_at = now()
+  // so the completer never races a live request on the same key. Stamp our
+  // owner token (audit C1/C2) and read the backstop counter in one round trip.
+  const owner = randomUUID();
+  const locked = await pool.query<{ id: string; completer_attempts: number }>(
+    `UPDATE idempotency_keys SET locked_at = now(), locked_by = $3
      WHERE id = $1
        AND recovery_point <> 'finished'
        AND (locked_at IS NULL OR locked_at < now() - make_interval(secs => $2))
-     RETURNING id`,
-    [keyId, config.idempotencyLockTimeoutMs / 1000],
+     RETURNING id, completer_attempts`,
+    [keyId, config.idempotencyLockTimeoutMs / 1000, owner],
   );
   if (locked.rows.length === 0) {
     // A live process holds the lock (or the key just finished): retry later.
@@ -238,14 +262,28 @@ export async function handleCompleteIntent(ctx: HandlerContext, job: JobRow): Pr
     return;
   }
 
+  // Poisoned-key backstop (audit C5/O1): a key that keeps failing to complete
+  // would re-enqueue a job every grace period forever + re-emit transition
+  // events each cycle. Past the cap, drive it to a terminal failed state with a
+  // stored response so the client gets a stable answer and the loop stops.
+  const attempts = locked.rows[0]?.completer_attempts ?? 0;
+  if (attempts >= config.completerMaxAttempts) {
+    const driven = await driveKeyToTerminal(pool, keyId, owner);
+    await completeJob(pool, job.id, config.workerId);
+    log.warn({ keyId, attempts, driven }, 'completer backstop: stuck key driven to terminal failed');
+    return;
+  }
+
   try {
     const result = await runIntentPipeline(
       { pool, providerUrl: config.providerUrl, providerTimeoutMs: config.providerTimeoutMs },
       keyId,
+      owner,
     );
     if (result.code >= 500) {
       // Provider unavailable — the pipeline already released the key lock;
-      // retry the completion with backoff.
+      // count the failed attempt (toward the backstop cap) and retry.
+      await bumpCompleterAttempts(pool, keyId);
       await failJob(pool, job, config.workerId, retryOptions(config));
       log.warn({ keyId, code: result.code }, 'completer: provider unavailable, retry scheduled');
       return;
@@ -254,14 +292,91 @@ export async function handleCompleteIntent(ctx: HandlerContext, job: JobRow): Pr
     log.info({ keyId, code: result.code }, 'completer: stuck key driven to finished');
   } catch (err) {
     log.error({ err, keyId }, 'completer: pipeline failed');
+    await bumpCompleterAttempts(pool, keyId).catch(() => undefined);
     await pool
       .query(
-        `UPDATE idempotency_keys SET locked_at = NULL WHERE id = $1 AND recovery_point <> 'finished'`,
-        [keyId],
+        `UPDATE idempotency_keys SET locked_at = NULL, locked_by = NULL
+         WHERE id = $1 AND locked_by = $2 AND recovery_point <> 'finished'`,
+        [keyId, owner],
       )
       .catch(() => undefined);
     await failJob(pool, job, config.workerId, retryOptions(config));
   }
+}
+
+async function bumpCompleterAttempts(pool: Pool, keyId: string): Promise<void> {
+  await pool.query(
+    `UPDATE idempotency_keys SET completer_attempts = completer_attempts + 1
+     WHERE id = $1 AND recovery_point <> 'finished'`,
+    [keyId],
+  );
+}
+
+/**
+ * Drive a permanently-stuck key to a terminal failed state (backstop). Any
+ * intent is walked to `failed` through the state machine (created/processing ->
+ * PROVIDER_TIMEOUT -> requires_retry -> RETRY_EXHAUSTED -> failed; the last edge
+ * is why RETRY_EXHAUSTED exists) and a stable 500 response is stored on the key.
+ * Owner-fenced: aborts if the stale lock was stolen while we looked. Returns
+ * true if it committed the terminal state.
+ */
+async function driveKeyToTerminal(pool: Pool, keyId: string, owner: string): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const keyRes = await client.query<{ intent_id: string | null; recovery_point: string }>(
+      'SELECT intent_id, recovery_point FROM idempotency_keys WHERE id = $1',
+      [keyId],
+    );
+    const key = keyRes.rows[0];
+    if (key === undefined || key.recovery_point === 'finished') {
+      await client.query('ROLLBACK');
+      return false;
+    }
+    if (key.intent_id !== null) {
+      let intent = await loadIntentRow(client, key.intent_id);
+      if (intent !== null && (intent.status === 'created' || intent.status === 'processing')) {
+        await applyTransition(client, intent, { type: 'PROVIDER_TIMEOUT' });
+        intent = await loadIntentRow(client, key.intent_id);
+      }
+      if (intent !== null && intent.status === 'requires_retry') {
+        await applyTransition(client, intent, { type: 'RETRY_EXHAUSTED' });
+      }
+    }
+    const body = {
+      error: 'retry_exhausted',
+      status: 'failed',
+      message: 'this request could not be completed after repeated attempts',
+    };
+    const finished = await client.query<{ id: string }>(
+      `UPDATE idempotency_keys
+       SET recovery_point = 'finished', response_code = 500, response_body = $2,
+           locked_at = NULL, locked_by = NULL
+       WHERE id = $1 AND locked_by = $3 AND recovery_point <> 'finished'
+       RETURNING id`,
+      [keyId, JSON.stringify(body), owner],
+    );
+    if (finished.rows.length === 0) {
+      await client.query('ROLLBACK'); // lost ownership — leave it to the new owner
+      return false;
+    }
+    await client.query('COMMIT');
+    return true;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function loadIntentRow(client: PoolClient, intentId: string): Promise<IntentRow | null> {
+  const result = await client.query<IntentRow>(
+    `SELECT id, amount_minor, currency, status, provider_ref, failure_code, created_at
+     FROM payment_intents WHERE id = $1`,
+    [intentId],
+  );
+  return result.rows[0] ?? null;
 }
 
 /**
