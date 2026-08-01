@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type { Logger } from 'pino';
 import { applyTransition, runIntentPipeline, type IntentRow } from '@tally/api/pipeline';
@@ -131,26 +132,30 @@ function abs(value: bigint): bigint {
   return value < 0n ? -value : value;
 }
 
-/** Free-or-stale key lock takeover — identical rule to the API and completer. */
-async function takeKeyLock(
-  pool: Pool,
-  keyId: string,
-  lockTimeoutMs: number,
-): Promise<'locked' | 'busy' | 'finished'> {
+type LockResult = { status: 'locked'; owner: string } | { status: 'busy' } | { status: 'finished' };
+
+/**
+ * Free-or-stale key lock takeover — identical rule to the API and completer,
+ * and now stamps an owner token (audit C1/C2) so the pipeline it hands off to
+ * is fenced against a competing actor.
+ */
+async function takeKeyLock(pool: Pool, keyId: string, lockTimeoutMs: number): Promise<LockResult> {
+  const owner = randomUUID();
   const locked = await pool.query<{ id: string }>(
-    `UPDATE idempotency_keys SET locked_at = now()
+    `UPDATE idempotency_keys SET locked_at = now(), locked_by = $3
      WHERE id = $1
        AND recovery_point <> 'finished'
        AND (locked_at IS NULL OR locked_at < now() - make_interval(secs => $2))
      RETURNING id`,
-    [keyId, lockTimeoutMs / 1000],
+    [keyId, lockTimeoutMs / 1000, owner],
   );
-  if (locked.rows.length > 0) return 'locked';
+  if (locked.rows.length > 0) return { status: 'locked', owner };
   const state = await pool.query<{ recovery_point: string }>(
     'SELECT recovery_point FROM idempotency_keys WHERE id = $1',
     [keyId],
   );
-  return state.rows[0]?.recovery_point === 'finished' ? 'finished' : 'busy';
+  if (state.rows[0]?.recovery_point === 'finished') return { status: 'finished' };
+  return { status: 'busy' };
 }
 
 /**
@@ -163,6 +168,7 @@ async function applyTruthCharge(
   client: PoolClient,
   keyId: string,
   charge: TruthCharge,
+  owner: string,
 ): Promise<void> {
   await client.query('BEGIN');
   try {
@@ -190,10 +196,18 @@ async function applyTruthCharge(
       `UPDATE payment_intents SET provider_ref = $2, updated_at = now() WHERE id = $1`,
       [intent.id, charge.id],
     );
-    await client.query(
-      `UPDATE idempotency_keys SET recovery_point = 'provider_charged' WHERE id = $1`,
-      [keyId],
+    // Owner-fenced pointer advance (audit C1/C2): if the stale lock was stolen
+    // while we applied truth, this affects 0 rows and the whole apply rolls back.
+    const advanced = await client.query<{ id: string }>(
+      `UPDATE idempotency_keys SET recovery_point = 'provider_charged'
+       WHERE id = $1 AND locked_by = $2 AND recovery_point = 'intent_created'
+       RETURNING id`,
+      [keyId, owner],
     );
+    if (advanced.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return;
+    }
     await client.query('INSERT INTO events (type, payload) VALUES ($1, $2)', [
       'reconciliation.charge_recovered',
       JSON.stringify({
@@ -223,35 +237,37 @@ async function resolveOrphan(
   const deps = { pool, providerUrl, providerTimeoutMs: options.providerTimeoutMs };
 
   const lock = await takeKeyLock(pool, keyId, options.lockTimeoutMs);
-  if (lock === 'finished') return 'resolved'; // finished while we were looking
-  if (lock === 'busy') return 'unresolved'; // a live owner is on it — leave it alone
+  if (lock.status === 'finished') return 'resolved'; // finished while we were looking
+  if (lock.status === 'busy') return 'unresolved'; // a live owner is on it — leave it alone
+  let owner = lock.owner;
 
   try {
     // Primary path: the same resume loop as the API/completer. The provider
     // replays the derived key's original outcome, so this normally finishes.
-    let result = await runIntentPipeline(deps, keyId);
+    let result = await runIntentPipeline(deps, keyId, owner);
     if (result.code < 500) return 'resolved';
 
     // Provider unreachable — but /truth proves the charge exists. The timeout
     // path released the lock; retake it, apply the charge from truth, and let
     // the pipeline finish the ledger locally.
     const relock = await takeKeyLock(pool, keyId, options.lockTimeoutMs);
-    if (relock !== 'locked') return relock === 'finished' ? 'resolved' : 'unresolved';
+    if (relock.status !== 'locked') return relock.status === 'finished' ? 'resolved' : 'unresolved';
+    owner = relock.owner;
     const client = await pool.connect();
     try {
-      await applyTruthCharge(client, keyId, charge);
+      await applyTruthCharge(client, keyId, charge, owner);
     } finally {
       client.release();
     }
-    result = await runIntentPipeline(deps, keyId);
+    result = await runIntentPipeline(deps, keyId, owner);
     return result.code === 200 ? 'resolved_from_truth' : 'unresolved';
   } catch (err) {
     log.error({ err, keyId, chargeId: charge.id }, 'reconciler: orphan resolution failed');
     await pool
       .query(
-        `UPDATE idempotency_keys SET locked_at = NULL
-         WHERE id = $1 AND recovery_point <> 'finished'`,
-        [keyId],
+        `UPDATE idempotency_keys SET locked_at = NULL, locked_by = NULL
+         WHERE id = $1 AND locked_by = $2 AND recovery_point <> 'finished'`,
+        [keyId, owner],
       )
       .catch(() => undefined);
     return 'unresolved';
@@ -390,8 +406,13 @@ export async function runReconciliation(
               id: string;
               recovery_point: string;
               intent_status: string | null;
+              age_ms: number;
             }>(
-              `SELECT k.id, k.recovery_point, i.status AS intent_status
+              // age_ms is measured against OUR key's created_at in Postgres time
+              // (audit C6): comparing the provider's created_at to a local
+              // Date.now() lets clock skew make in-flight charges look orphaned.
+              `SELECT k.id, k.recovery_point, i.status AS intent_status,
+                      (EXTRACT(EPOCH FROM (now() - k.created_at)) * 1000)::float8 AS age_ms
                FROM idempotency_keys k
                LEFT JOIN payment_intents i ON i.id = k.intent_id
                WHERE k.id = ANY($1::uuid[])`,
@@ -417,8 +438,8 @@ export async function runReconciliation(
         }
         continue;
       }
-      if (Date.now() - Date.parse(charge.created_at) < options.graceMs) {
-        chargesInFlight += 1; // young — a live request/completer is on it
+      if (key.age_ms < options.graceMs) {
+        chargesInFlight += 1; // our key is young — a live request/completer is on it
         continue;
       }
       const outcome = await resolveOrphan(pool, options, keyId, charge);

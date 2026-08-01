@@ -87,6 +87,7 @@ beforeAll(async () => {
       providerTimeoutMs: 500, // short: the timeout-after-charge cases hang the socket
       lockTimeoutMs: 90_000,
       logLevel: 'silent',
+      enableProviderConfig: false,
     },
   });
   await api.ready();

@@ -22,7 +22,14 @@ const log = pino({ name: 'tally-reconcile', level: config.logLevel });
 const providerUrl = process.env.PROVIDER_URL === '' ? null : config.providerUrl;
 if (providerUrl === null) log.warn('PROVIDER_URL empty — external pass skipped');
 
-const pool = new Pool({ connectionString: config.databaseUrl });
+const pool = new Pool({
+  connectionString: config.databaseUrl,
+  connectionTimeoutMillis: 10_000,
+  statement_timeout: 30_000,
+  query_timeout: 30_000,
+  keepAlive: true,
+});
+pool.on('error', (err) => log.error({ err }, 'postgres pool idle client error'));
 try {
   const report = await runReconciliation(pool, {
     providerUrl,
