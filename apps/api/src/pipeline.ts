@@ -342,17 +342,59 @@ async function phaseProviderTimeout(
   });
 }
 
-/** provider_charged -> ledger_posted: post charge + fee atomically with the pointer. */
-async function phasePostLedger(client: PoolClient, key: KeyRow, owner: string): Promise<void> {
+// Chart of accounts is immutable seed data (INSERT-only, never updated/deleted),
+// so the per-currency {type -> account_id} map is resolved once per process and
+// reused — cutting one SELECT off every payment's ledger phase.
+// ponytail: process-local cache of immutable seed rows; a new currency's
+// accounts are fetched lazily on first use. Restart on chart-of-accounts change.
+const accountsByCurrency = new Map<string, Map<string, string>>();
+
+async function resolveAccounts(client: PoolClient, currency: string): Promise<Map<string, string>> {
+  const cached = accountsByCurrency.get(currency);
+  if (cached !== undefined) return cached;
+  const accounts = await client.query<{ id: string; type: string }>(
+    'SELECT id, type FROM accounts WHERE currency = $1',
+    [currency],
+  );
+  const byType = new Map(accounts.rows.map((row) => [row.type, row.id]));
+  accountsByCurrency.set(currency, byType);
+  return byType;
+}
+
+function succeededBody(intent: IntentRow, providerRef: string): Record<string, unknown> {
+  return {
+    id: intent.id,
+    status: 'succeeded',
+    amount_minor: Number(intent.amount_minor),
+    currency: intent.currency,
+    provider_ref: providerRef,
+    created_at: intent.created_at.toISOString(),
+  };
+}
+
+/**
+ * provider_charged -> finished in ONE transaction: post charge + fee, succeed
+ * the intent (+ outbox event), store the response, and advance the pointer
+ * straight to 'finished'. The old ledger_posted -> finished split was two
+ * transactions with no external effect between them; merging halves the DB
+ * round-trips on the happy path. Crash-safety is unchanged: a crash mid-TX
+ * rolls back to 'provider_charged', and resume re-posts the ledger idempotently
+ * (unique per intent_id,kind) — byte-identical to the pre-merge outcome. The
+ * fencing guard (locked_by + recovery_point) is still the last statement.
+ */
+async function phasePostLedgerAndFinish(
+  client: PoolClient,
+  key: KeyRow,
+  owner: string,
+): Promise<void> {
   const intent = await loadIntent(client, key);
+  const providerRef = intent.provider_ref;
+  if (providerRef === null)
+    throw new Error(`intent ${intent.id} reached ledger post without provider_ref`);
   const amount = BigInt(intent.amount_minor);
   const fee = chargeFeeMinor(amount);
 
-  const accounts = await client.query<{ id: string; type: string }>(
-    'SELECT id, type FROM accounts WHERE currency = $1',
-    [intent.currency],
-  );
-  const byType = new Map(accounts.rows.map((row) => [row.type, row.id]));
+  const byType = await resolveAccounts(client, intent.currency);
   const accountId = (type: string): string => {
     const id = byType.get(type);
     if (id === undefined) throw new Error(`no ${type} account for currency ${intent.currency}`);
@@ -376,17 +418,25 @@ async function phasePostLedger(client: PoolClient, key: KeyRow, owner: string): 
         { accountId: accountId('platform_revenue'), direction: 'credit', amountMinor: fee },
       ],
     });
-    const advanced = await client.query(
-      `UPDATE idempotency_keys SET recovery_point = 'ledger_posted'
-       WHERE id = $1 AND locked_by = $2 AND recovery_point = 'provider_charged'
+    await applyTransition(client, intent, { type: 'PROVIDER_ACCEPTED', providerRef });
+    const finished = await client.query(
+      `UPDATE idempotency_keys
+       SET recovery_point = 'finished', response_code = 200, response_body = $2,
+           locked_at = NULL, locked_by = NULL
+       WHERE id = $1 AND locked_by = $3 AND recovery_point = 'provider_charged'
        RETURNING id`,
-      [key.id, owner],
+      [key.id, JSON.stringify(succeededBody(intent, providerRef)), owner],
     );
-    if (advanced.rows.length === 0) throw new OwnershipLostError();
+    if (finished.rows.length === 0) throw new OwnershipLostError();
   });
 }
 
-/** ledger_posted -> finished: succeed the intent, store the response, unlock. */
+/**
+ * ledger_posted -> finished: succeed the intent, store the response, unlock.
+ * Reached only by rows left at 'ledger_posted' by a pre-merge process (a crash
+ * or the completer resuming an in-flight key across a deploy); the merged
+ * provider_charged phase now advances straight to finished.
+ */
 async function phaseFinish(client: PoolClient, key: KeyRow, owner: string): Promise<void> {
   const intent = await loadIntent(client, key);
   const providerRef = intent.provider_ref;
@@ -394,21 +444,13 @@ async function phaseFinish(client: PoolClient, key: KeyRow, owner: string): Prom
     throw new Error(`intent ${intent.id} reached finish without provider_ref`);
   await inTx(client, async () => {
     await applyTransition(client, intent, { type: 'PROVIDER_ACCEPTED', providerRef });
-    const body = {
-      id: intent.id,
-      status: 'succeeded',
-      amount_minor: Number(intent.amount_minor),
-      currency: intent.currency,
-      provider_ref: providerRef,
-      created_at: intent.created_at.toISOString(),
-    };
     const finished = await client.query(
       `UPDATE idempotency_keys
        SET recovery_point = 'finished', response_code = 200, response_body = $2,
            locked_at = NULL, locked_by = NULL
        WHERE id = $1 AND locked_by = $3 AND recovery_point = 'ledger_posted'
        RETURNING id`,
-      [key.id, JSON.stringify(body), owner],
+      [key.id, JSON.stringify(succeededBody(intent, providerRef)), owner],
     );
     if (finished.rows.length === 0) throw new OwnershipLostError();
   });
@@ -470,11 +512,12 @@ async function step(
       return { kind: 'charge', intent };
     }
     case 'provider_charged': {
-      await phasePostLedger(client, key, owner);
-      deps.faultHook?.('ledger_posted');
+      await phasePostLedgerAndFinish(client, key, owner);
+      deps.faultHook?.('finished');
       return { kind: 'advance' };
     }
     case 'ledger_posted': {
+      // Backward-compat: rows a pre-merge process left mid-flight at this point.
       await phaseFinish(client, key, owner);
       deps.faultHook?.('finished');
       return { kind: 'advance' };
