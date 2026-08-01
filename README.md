@@ -41,24 +41,26 @@ Every number below is reproduced by a committed script. None are estimates.
 
 **Signature test** (in CI on every push): the same request fired 50× concurrently produces exactly **1 intent, 1 provider charge, 1 ledger charge transaction, and 50 byte-identical responses**.
 
-**Test suite**: 82 tests green — 50 unit (including a 1,000-transaction ledger property test) and 32 integration tests against real Postgres via Testcontainers. No mocked infrastructure.
+**Test suite**: 83 tests green — 50 unit (including a 1,000-transaction ledger property test) and 33 integration tests against real Postgres via Testcontainers. No mocked infrastructure.
 
-**Benchmarks** (`npm run bench` against the booted compose stack; Node 22, local Docker, M-series laptop — reproduce on your own hardware):
+**Benchmarks** (`npm run bench` against the booted compose stack; Node, local Docker, M-series laptop — reproduce on your own hardware). Numbers below are the **median of 3 runs**; run-to-run RPS varies ±~30% on a shared laptop (this measurement box was co-resident with two other full Docker stacks). The committed `bench-results.json` is the most recent single run. See `PERFORMANCE.md` for the controlled before/after of the round-trip optimizations.
 
 | scenario                           | conc |     n | p50 ms | p95 ms | p99 ms |        RPS |
 | ---------------------------------- | ---: | ----: | -----: | -----: | -----: | ---------: |
-| create (unique key)                |    1 |   500 |   10.1 |   14.6 |   20.8 |         86 |
-| create (unique key)                |    8 |   500 |   15.0 |   26.3 |   57.5 |        468 |
-| create (unique key)                |   32 |   500 |   58.1 |   72.0 |   96.0 |        522 |
-| create (unique key)                |   64 |   500 |  115.6 |  130.2 |  143.7 |        547 |
-| replay (finished key)              |    1 |   500 |    0.6 |    1.0 |    1.6 |      1,457 |
-| replay (finished key)              |    8 |   500 |    1.8 |    3.4 |    4.4 |      4,040 |
-| replay (finished key)              |   32 |   500 |    5.4 |    7.8 |   10.0 |      5,436 |
-| replay (finished key)              |   64 |   500 |   11.7 |   19.4 |   21.7 |      4,886 |
-| ledger postTransaction, sequential |    1 | 1,000 |    0.6 |    1.0 |    1.8 | 1,469 tx/s |
-| ledger postTransaction, 8 clients  |    8 | 2,000 |    1.4 |    2.6 |    3.3 | 4,576 tx/s |
+| create (unique key)                |    1 |   500 |   10.0 |   16.6 |   25.9 |         93 |
+| create (unique key)                |    8 |   500 |   15.4 |   27.5 |   43.8 |        480 |
+| create (unique key)                |   32 |   500 |   54.0 |   86.4 |   94.6 |        524 |
+| create (unique key)                |   64 |   500 |  116.7 |  207.8 |  215.0 |        411 |
+| replay (finished key)              |    1 |   500 |    0.6 |    2.3 |    3.4 |      1,156 |
+| replay (finished key)              |    8 |   500 |    1.7 |    3.9 |    4.6 |      4,293 |
+| replay (finished key)              |   32 |   500 |    6.4 |    9.4 |   10.4 |      4,795 |
+| replay (finished key)              |   64 |   500 |   15.0 |   29.8 |   30.6 |      4,089 |
+| ledger postTransaction, sequential |    1 | 1,000 |    0.6 |    1.3 |    2.6 | 1,328 tx/s |
+| ledger postTransaction, 8 clients  |    8 | 2,000 |    1.5 |    3.7 |    4.7 | 4,310 tx/s |
 
 The replay rows are the point of the idempotency design: a finished key never re-enters the pipeline, it serves the stored response straight from Postgres — an order of magnitude faster than doing the work, and always byte-identical.
+
+A create was profiled down from **32 to 26 sequential DB round-trips** (4 → 3 write transactions) by caching the immutable chart-of-accounts per process and merging the two pure-DB terminal phases (ledger post + finish) into one transaction — with the crash-safety and idempotency-fencing invariants unchanged. Full methodology and before/after in `PERFORMANCE.md`.
 
 ## Demo
 
