@@ -123,6 +123,67 @@ next_attempt_at, then dead-letters at the cap" and "requeue resets the
 delivery and delivers once the endpoint recovers". `packages/db/test`: "fail
 schedules an exponential retry, then dead-letters at maxAttempts".
 
+## 7. Stale-lock takeover while the original actor is still alive
+
+**What breaks.** An actor takes a key's lock, then stalls past the lock timeout
+without dying — blocked in a slow provider call, a long GC pause, a paused
+container. Its lock now looks stale, so a second actor (a retry, the completer,
+or the reconciler) legitimately steals it and finishes the payment. Then the
+original wakes up, still holding what it thinks is its lock.
+
+**What happens.** Nothing harmful — the lock is *fenced*. Each taker stamps a
+fresh `locked_by` owner token; every unlock and every `recovery_point` advance
+is guarded by `AND locked_by = <owner> AND recovery_point = <expected>`. The
+woken original's next guarded update matches 0 rows (the token is now someone
+else's), so it aborts the pipeline via `OwnershipLostError` and replays the
+finished response (or answers 409). It never frees the new owner's lock (which
+would let a third actor run concurrently → duplicate `succeeded` webhooks) and
+never regresses the pointer (which would double-post the ledger or wedge the key
+at an illegal transition).
+
+**How it recovers.** It doesn't need to — the second actor already completed the
+payment exactly once; the original just observes that and returns the stored
+result. The DB row is the single source of truth and the CAS guards make every
+advance conditional on still owning it.
+
+**Proof.** `apps/api/test`: "stale-lock takeover fencing (owner token + CAS) —
+fences the still-alive original after a stale-lock steal: no double-post, no
+wedge". It holds the original inside a 600ms provider call, lets its 200ms lock
+go stale, has a second owner steal the lock and finish through the same
+pipeline, then resumes the original and asserts **exactly one** provider charge,
+one intent, one `payment_intent.succeeded` event (one webhook, not two), a
+balanced ledger, and a clean `200` (never a `500` wedge). The existing crash/
+SIGKILL tests can't reach this case — they kill the process; this one keeps the
+stalled actor alive, which is the whole point.
+
+## 8. Poisoned / permanently-stuck idempotency key
+
+**What breaks.** A key that can never complete — the live example was an
+`amount_minor` above 2^63 that overflowed the `bigint` intent INSERT, so
+`phaseCreateIntent` threw on every attempt and the key sat at `started` forever.
+The completer's enqueuer re-drove it every grace period, and each failed cycle
+burned ~10 job attempts and re-emitted transition events: unbounded dead jobs
+plus webhook spam, with no client ever getting a terminal answer.
+
+**What happens.** Two layers. The **schema maximum** (2^53−1) now rejects the
+oversize amount at the API boundary, so this specific poison can't be created
+again. For any *other* permanent stall, a per-key `completer_attempts` counter
+bounds the re-drives: past the cap (25) the completer walks the intent to
+`failed` through the state machine (`RETRY_EXHAUSTED`) and stores a stable `500`
+response on the key.
+
+**How it recovers.** The key reaches `finished` with a terminal response, so the
+client gets a stable answer, the enqueuer's dedupe stops re-enqueuing (the key
+is no longer non-finished), and the event storm ends. The 5 already-poisoned
+keys in the running dev DB were purged as part of shipping the fix.
+
+**Proof.** `packages/db`/schema: `amount_minor` capped at 2^53−1 on the route
+and the provider-sim (the "invalid amount" boundary). Completer backstop:
+`apps/worker/test` completer suite drives a stuck key to `finished`; the cap
+path is exercised by the `completer_attempts` guard in `handleCompleteIntent`.
+The chaos run (`--intents 2000`) submits amounts only within range and finishes
+with 0 non-terminal intents and 0 dead jobs of any kind.
+
 ## Chaos harness findings
 
 The chaos run (`scripts/chaos.ts`) found real bugs during phase D; two

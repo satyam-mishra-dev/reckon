@@ -71,7 +71,7 @@ docker compose up -d --wait     # postgres, migrate+seed, api, worker, provider-
 open http://localhost:4801/playground.html
 ```
 
-The playground fires real payments. "Double-submit ×5" sends five concurrent identical requests so you can watch idempotency produce five byte-identical responses and a single provider charge. The provider chaos panel flips the simulated card provider into declines or timeouts-after-charge; the intent feed shows failures, retries and recovery live.
+The playground fires real payments. "Double-submit ×5" sends five concurrent identical requests so you can watch idempotency produce five byte-identical responses and a single provider charge. The provider chaos panel flips the simulated card provider into declines or timeouts-after-charge; the intent feed shows failures, retries and recovery live. That panel drives an unauthenticated provider-config passthrough, so it is a **demo-only control gated behind `ENABLE_PROVIDER_CONFIG=1`** (set in compose; off everywhere else — see DECISIONS.md).
 
 Host ports: `4800` api · `4801` dashboard · `4802` provider-sim · `4803` receiver · `5433` postgres.
 
@@ -85,6 +85,8 @@ curl -s -X POST http://localhost:4800/v1/payment_intents \
 ```
 
 Run it twice: the second response is the stored first one, byte for byte.
+
+`amount_minor` is in minor units (cents) and bounded to `[50, 9007199254740991]`: below 50 the fixed `+30` fee would exceed the charge, and above 2^53−1 a JSON-number amount loses precision (see DECISIONS.md). Out-of-range or non-numeric amounts are rejected with `400`.
 
 ### Development
 
