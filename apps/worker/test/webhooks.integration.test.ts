@@ -50,7 +50,9 @@ const testWorkerConfig = (databaseUrl: string): WorkerConfig => ({
   outboxBatch: 50,
   completerIntervalMs: 600_000,
   completerGraceMs: 600_000,
+  completerMaxAttempts: 25,
   idempotencyLockTimeoutMs: 90_000,
+  livenessFile: '/tmp/tally-test-webhooks-alive',
   webhookTimeoutMs: 2000,
   maxAttempts: MAX_ATTEMPTS,
   backoffBaseMs: 50,
@@ -136,6 +138,7 @@ beforeAll(async () => {
       providerTimeoutMs: 1000,
       lockTimeoutMs: 90_000,
       logLevel: 'silent',
+      enableProviderConfig: false,
     },
   });
   await api.ready();

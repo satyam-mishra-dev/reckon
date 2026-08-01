@@ -74,6 +74,9 @@ services:
     environment:
       <<: *db-env
       PORT: '4800'
+      # Demo-only: exposes the provider-sim config passthrough so the dashboard
+      # playground can flip failure profiles. Off by default (see DECISIONS.md).
+      ENABLE_PROVIDER_CONFIG: '1'
     ports:
       - '4800:4800'
     healthcheck: *http-health
@@ -89,6 +92,17 @@ services:
     environment:
       <<: *db-env
       WORKER_ID: compose-worker
+    # The worker has no HTTP port; it touches a liveness file every poll and the
+    # healthcheck asserts a recent mtime, so a black-holed PG connection that
+    # wedges the poll loop shows up as unhealthy (audit O2).
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - node -e "process.exit(Date.now()-require('fs').statSync('/tmp/tally-worker-alive').mtimeMs<30000?0:1)"
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
     depends_on:
       migrate:
         condition: service_completed_successfully

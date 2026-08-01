@@ -6,8 +6,16 @@ const app = buildApp({ config });
 
 await app.listen({ port: config.port, host: '0.0.0.0' });
 
+let shuttingDown = false;
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.once(signal, () => {
-    void app.close().then(() => process.exit(0)); // onClose hook ends the pool
+  // .on (not .once): a second signal during a hanging/rejecting close hard-exits
+  // instead of waiting for SIGKILL, and a rejected close exits non-zero (audit O7).
+  process.on(signal, () => {
+    if (shuttingDown) process.exit(1);
+    shuttingDown = true;
+    app
+      .close() // onClose hook ends the pool
+      .then(() => process.exit(0))
+      .catch(() => process.exit(1));
   });
 }

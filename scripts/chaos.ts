@@ -684,6 +684,11 @@ async function scoreboardAndAssert(pool: Pool, reconcileExit: number): Promise<s
     `${eventCounts.total - eventCounts.dispatched} undispatched events`,
   );
   check(pendingDeliveries === 0, `${pendingDeliveries} deliveries still pending`);
+  // A fully-broken webhook pipeline would leave 0 delivered / 0 dead and pass
+  // vacuously — assert the pipeline actually did work (audit O3).
+  check(deadDeliveries === 0, `${deadDeliveries} dead webhook deliveries`);
+  check(delivered > 0, 'no webhooks were delivered (webhook pipeline never ran)');
+  check(redeliveries > 0, 'no redeliveries were injected (dedupe proof never exercised)');
   check(liveJobs === 0, `${liveJobs} jobs still pending/running`);
   check(
     distinctProcessed === received.events.length,
