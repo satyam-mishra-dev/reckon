@@ -387,7 +387,9 @@ describe('stale-lock takeover fencing (owner token + CAS)', () => {
     // 600ms provider latency holds the original request inside the charge; a
     // 200ms lock timeout makes its lock stealable while it is still in flight.
     await setSim({ latency_base_ms: 600 });
-    const shortApp = buildApp({ config: { ...config, lockTimeoutMs: 200, providerTimeoutMs: 5000 } });
+    const shortApp = buildApp({
+      config: { ...config, lockTimeoutMs: 200, providerTimeoutMs: 5000 },
+    });
     await shortApp.ready();
     try {
       const key = 'stale-steal-1';

@@ -270,7 +270,10 @@ export async function handleCompleteIntent(ctx: HandlerContext, job: JobRow): Pr
   if (attempts >= config.completerMaxAttempts) {
     const driven = await driveKeyToTerminal(pool, keyId, owner);
     await completeJob(pool, job.id, config.workerId);
-    log.warn({ keyId, attempts, driven }, 'completer backstop: stuck key driven to terminal failed');
+    log.warn(
+      { keyId, attempts, driven },
+      'completer backstop: stuck key driven to terminal failed',
+    );
     return;
   }
 

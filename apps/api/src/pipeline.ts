@@ -558,10 +558,7 @@ async function applyChargeResult(
 }
 
 /** Ownership lost mid-flight: re-read the key and answer replay-or-409. */
-async function ownershipLostResponse(
-  client: PoolClient,
-  keyId: string,
-): Promise<PipelineResponse> {
+async function ownershipLostResponse(client: PoolClient, keyId: string): Promise<PipelineResponse> {
   const key = await loadKey(client, keyId);
   if (key.recovery_point === 'finished' && key.response_code !== null) {
     return { code: key.response_code, body: key.response_body };

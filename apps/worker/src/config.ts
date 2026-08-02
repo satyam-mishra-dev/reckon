@@ -55,7 +55,9 @@ export interface WorkerConfig {
 
 export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
   if (env.DATABASE_URL === undefined || env.DATABASE_URL === '') {
-    console.warn('DATABASE_URL not set — defaulting to postgres://reckon:reckon@localhost:5433/reckon');
+    console.warn(
+      'DATABASE_URL not set — defaulting to postgres://reckon:reckon@localhost:5433/reckon',
+    );
   }
   return {
     databaseUrl: env.DATABASE_URL ?? 'postgres://reckon:reckon@localhost:5433/reckon',

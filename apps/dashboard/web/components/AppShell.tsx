@@ -20,9 +20,31 @@ const REPO = 'https://github.com/'; // TODO(voice): author sets the real repo UR
 function BrandMark(): ReactNode {
   return (
     <svg width="18" height="18" viewBox="0 0 32 32" aria-hidden className="shrink-0">
-      <path d="M9 8.5h14l-6.4 7.5L23 23.5H9l6.2-7.4Z" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinejoin="round" />
-      <line x1="9" y1="8.5" x2="23" y2="8.5" stroke="var(--color-credit)" strokeWidth="2.4" strokeLinecap="round" />
-      <line x1="9" y1="23.5" x2="23" y2="23.5" stroke="var(--color-debit)" strokeWidth="2.4" strokeLinecap="round" />
+      <path
+        d="M9 8.5h14l-6.4 7.5L23 23.5H9l6.2-7.4Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinejoin="round"
+      />
+      <line
+        x1="9"
+        y1="8.5"
+        x2="23"
+        y2="8.5"
+        stroke="var(--color-credit)"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+      />
+      <line
+        x1="9"
+        y1="23.5"
+        x2="23"
+        y2="23.5"
+        stroke="var(--color-debit)"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

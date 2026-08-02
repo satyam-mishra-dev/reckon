@@ -28,11 +28,21 @@ function sides(accounts: { balance_minor: string }[]): { debit: bigint; credit: 
   return { debit, credit };
 }
 
-function Pan({ label, amount, tone }: { label: string; amount: string; tone: 'debit' | 'credit' }): ReactNode {
+function Pan({
+  label,
+  amount,
+  tone,
+}: {
+  label: string;
+  amount: string;
+  tone: 'debit' | 'credit';
+}): ReactNode {
   return (
     <div className={tone === 'debit' ? 'text-right' : 'text-left'}>
       <div className="eyebrow">{label}</div>
-      <div className={`font-mono text-[15px] font-medium tnum sm:text-lg ${tone === 'debit' ? 'text-debit' : 'text-credit'}`}>
+      <div
+        className={`font-mono text-[15px] font-medium tnum sm:text-lg ${tone === 'debit' ? 'text-debit' : 'text-credit'}`}
+      >
         {amount}
       </div>
     </div>
@@ -60,7 +70,13 @@ export function BalanceBar(): ReactNode {
     // tilt from any residual imbalance; ~0 by the invariant, so the beam is level.
     const denom = debit + credit;
     const imbalance = denom === 0n ? 0 : Number(debit - credit) / Number(denom);
-    return { debit: debit.toString(), credit: credit.toString(), total, balanced, tilt: imbalance * 8 };
+    return {
+      debit: debit.toString(),
+      credit: credit.toString(),
+      total,
+      balanced,
+      tilt: imbalance * 8,
+    };
   }, [data]);
 
   // Re-key the beam on any change so the weigh animation replays and settles.
@@ -89,7 +105,10 @@ export function BalanceBar(): ReactNode {
             <div
               key={pulse}
               className="flex w-full items-center justify-between [animation:weigh_600ms_ease]"
-              style={{ transform: `rotate(${view ? view.tilt.toFixed(2) : 0}deg)`, transition: 'transform 250ms ease' }}
+              style={{
+                transform: `rotate(${view ? view.tilt.toFixed(2) : 0}deg)`,
+                transition: 'transform 250ms ease',
+              }}
             >
               <span className="h-2.5 w-2.5 rounded-full border border-debit bg-debit-wash" />
               <span className="mx-1 h-px flex-1 bg-ink" />
@@ -115,10 +134,9 @@ export function BalanceBar(): ReactNode {
               {/* TODO(voice): author replaces with the ledger-invariant explanation in their voice. */}
               <p className="font-sans">
                 <strong>Ledger invariant.</strong> Every payment posts balanced double-entry
-                transactions: each debit has an equal credit. Summed across all accounts the
-                ledger must equal zero. This bar re-reads <code>/v1/accounts</code> every few
-                seconds and sums it live — Σ is that sum. Balances are computed from entries,
-                never stored.
+                transactions: each debit has an equal credit. Summed across all accounts the ledger
+                must equal zero. This bar re-reads <code>/v1/accounts</code> every few seconds and
+                sums it live — Σ is that sum. Balances are computed from entries, never stored.
               </p>
             </InfoPopover>
           </div>

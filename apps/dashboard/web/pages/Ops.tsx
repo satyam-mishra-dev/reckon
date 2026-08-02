@@ -62,7 +62,9 @@ function IntentSheet({ id, onClose }: { id: string | null; onClose: () => void }
       subtitle={id ? shortId(id, 20) : undefined}
     >
       {err ? (
-        <ErrorState>Could not load this intent. It may have been removed — close and reopen.</ErrorState>
+        <ErrorState>
+          Could not load this intent. It may have been removed — close and reopen.
+        </ErrorState>
       ) : !detail ? (
         <div className="flex flex-col gap-3">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -100,9 +102,16 @@ function IntentSheet({ id, onClose }: { id: string | null; onClose: () => void }
                 <li className="text-[13px] text-ink-60">No events recorded.</li>
               ) : (
                 detail.events.map((e) => {
-                  const payload = e.payload as { previous_status?: string; status?: string; event?: string };
+                  const payload = e.payload as {
+                    previous_status?: string;
+                    status?: string;
+                    event?: string;
+                  };
                   return (
-                    <li key={e.id} className="flex items-start gap-3 border-l border-rule pl-3 pb-3 last:pb-0">
+                    <li
+                      key={e.id}
+                      className="flex items-start gap-3 border-l border-rule pl-3 pb-3 last:pb-0"
+                    >
                       <span className="-ml-[15px] mt-1 h-2 w-2 shrink-0 rounded-full border border-action bg-paper" />
                       <div className="flex-1">
                         <div className="font-mono text-[12px] text-ink">
@@ -133,7 +142,10 @@ function IntentSheet({ id, onClose }: { id: string | null; onClose: () => void }
                     <StatusBadge status={t.kind} />
                     <span className="font-mono tnum text-ink">
                       {money(
-                        t.entries.filter((x) => x.direction === 'debit').reduce((s, x) => s + BigInt(x.amount_minor), 0n).toString(),
+                        t.entries
+                          .filter((x) => x.direction === 'debit')
+                          .reduce((s, x) => s + BigInt(x.amount_minor), 0n)
+                          .toString(),
                       )}
                     </span>
                   </div>
@@ -199,46 +211,64 @@ function IntentsTab(): ReactNode {
         </div>
       ) : (
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-[13px]">
-          <thead>
-            <tr className="border-b border-rule text-left font-mono text-[11px] text-ink-45">
-              <th className="px-4 py-2 font-normal">Intent</th>
-              <th className="px-4 py-2 font-normal">Status</th>
-              <th className="px-4 py-2 text-right font-normal">Amount</th>
-              <th className="px-4 py-2 font-normal">Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((it) => (
-              <tr
-                key={it.id}
-                tabIndex={0}
-                onClick={() => setOpenId(it.id)}
-                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setOpenId(it.id))}
-                className="cursor-pointer border-b border-rule/60 hover:bg-wash focus:bg-wash focus:outline-none"
-              >
-                <td className="px-4 py-2.5 font-mono text-[12px] text-ink-60">{shortId(it.id)}</td>
-                <td className="px-4 py-2.5">
-                  <StatusBadge status={it.status} />
-                </td>
-                <td className="px-4 py-2.5 text-right font-mono tnum text-ink">
-                  {money(it.amount_minor, it.currency)}
-                </td>
-                <td className="px-4 py-2.5 font-mono text-[12px] text-ink-60">{ts(it.created_at)}</td>
+          <table className="w-full min-w-[560px] text-[13px]">
+            <thead>
+              <tr className="border-b border-rule text-left font-mono text-[11px] text-ink-45">
+                <th className="px-4 py-2 font-normal">Intent</th>
+                <th className="px-4 py-2 font-normal">Status</th>
+                <th className="px-4 py-2 text-right font-normal">Amount</th>
+                <th className="px-4 py-2 font-normal">Created</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((it) => (
+                <tr
+                  key={it.id}
+                  tabIndex={0}
+                  onClick={() => setOpenId(it.id)}
+                  onKeyDown={(e) =>
+                    (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setOpenId(it.id))
+                  }
+                  className="cursor-pointer border-b border-rule/60 hover:bg-wash focus:bg-wash focus:outline-none"
+                >
+                  <td className="px-4 py-2.5 font-mono text-[12px] text-ink-60">
+                    {shortId(it.id)}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <StatusBadge status={it.status} />
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono tnum text-ink">
+                    {money(it.amount_minor, it.currency)}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-[12px] text-ink-60">
+                    {ts(it.created_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
       <div className="flex items-center justify-between px-4 py-3 font-mono text-[11px] text-ink-45">
-        <span>{total > 0 ? `${offset + 1}–${Math.min(offset + 25, total)} of ${total}` : '0 of 0'}</span>
+        <span>
+          {total > 0 ? `${offset + 1}–${Math.min(offset + 25, total)} of ${total}` : '0 of 0'}
+        </span>
         <div className="flex gap-1.5">
-          <Button size="sm" variant="outline" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 25))}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={offset === 0}
+            onClick={() => setOffset(Math.max(0, offset - 25))}
+          >
             Newer
           </Button>
-          <Button size="sm" variant="outline" disabled={offset + 25 >= total} onClick={() => setOffset(offset + 25)}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={offset + 25 >= total}
+            onClick={() => setOffset(offset + 25)}
+          >
             Older
           </Button>
         </div>
@@ -250,9 +280,19 @@ function IntentsTab(): ReactNode {
 }
 
 // ---------------------------------------------------------------- Webhooks
-function DeliveryRow({ d, scaleMax, onRequeue }: { d: Delivery; scaleMax: number; onRequeue: (id: string) => void }): ReactNode {
+function DeliveryRow({
+  d,
+  scaleMax,
+  onRequeue,
+}: {
+  d: Delivery;
+  scaleMax: number;
+  onRequeue: (id: string) => void;
+}): ReactNode {
   const now = Date.now();
-  const nextIn = d.next_attempt_at ? Math.max(0, (new Date(d.next_attempt_at).getTime() - now) / 1000) : 0;
+  const nextIn = d.next_attempt_at
+    ? Math.max(0, (new Date(d.next_attempt_at).getTime() - now) / 1000)
+    : 0;
   const width = scaleMax > 0 ? Math.min(100, (nextIn / scaleMax) * 100) : 0;
   return (
     <div className="flex flex-col gap-1.5 border-b border-rule/60 px-4 py-3 last:border-0">
@@ -285,7 +325,10 @@ function DeliveryRow({ d, scaleMax, onRequeue }: { d: Delivery; scaleMax: number
         {d.status === 'pending' && nextIn > 0 ? (
           <div className="flex flex-1 items-center gap-2">
             <div className="h-1 flex-1 overflow-hidden rounded-full bg-rule">
-              <div className="h-full rounded-full bg-hold transition-[width] duration-500" style={{ width: `${width}%` }} />
+              <div
+                className="h-full rounded-full bg-hold transition-[width] duration-500"
+                style={{ width: `${width}%` }}
+              />
             </div>
             <span className="font-mono text-[11px] text-hold">next in {Math.ceil(nextIn)}s</span>
           </div>
@@ -370,7 +413,12 @@ function WebhooksTab(): ReactNode {
       ) : (
         <div>
           {rows.map((d) => (
-            <DeliveryRow key={d.id} d={d} scaleMax={scaleMax} onRequeue={(id) => void requeue(id)} />
+            <DeliveryRow
+              key={d.id}
+              d={d}
+              scaleMax={scaleMax}
+              onRequeue={(id) => void requeue(id)}
+            />
           ))}
         </div>
       )}
@@ -430,15 +478,20 @@ function ReconTab(): ReactNode {
           ))}
         </div>
       ) : reports.length === 0 ? (
-        <EmptyState title="No reconciliation runs yet">Run the reconciler to produce the first report.</EmptyState>
+        <EmptyState title="No reconciliation runs yet">
+          Run the reconciler to produce the first report.
+        </EmptyState>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {reports.map((r, i) => {
-            const clean = r.drift_minor === '0' && r.internal_violations === 0 && r.flagged_critical === 0;
+            const clean =
+              r.drift_minor === '0' && r.internal_violations === 0 && r.flagged_critical === 0;
             return (
               <Card key={r.id ?? i} className={`p-4 ${clean ? '' : 'border-debit/50'}`}>
                 <div className="flex items-center justify-between">
-                  <div className={`font-mono text-lg font-medium tnum ${clean ? 'text-credit' : 'text-debit'}`}>
+                  <div
+                    className={`font-mono text-lg font-medium tnum ${clean ? 'text-credit' : 'text-debit'}`}
+                  >
                     drift {majorAmount(r.drift_minor)}
                   </div>
                   <Badge tone={clean ? 'credit' : 'debit'}>{clean ? 'clean' : 'flagged'}</Badge>

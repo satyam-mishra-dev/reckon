@@ -11,17 +11,15 @@ import {
 import { useDocumentTitle, usePrefersReducedMotion } from '../lib/hooks';
 import { money } from '../lib/format';
 import { nudgeLedger } from '../components/BalanceBar';
-import {
-  Badge,
-  Button,
-  Card,
-  Eyebrow,
-  InfoPopover,
-  PageTitle,
-  Slider,
-} from '../components/ui';
+import { Badge, Button, Card, Eyebrow, InfoPopover, PageTitle, Slider } from '../components/ui';
 
-const RECOVERY = ['started', 'intent_created', 'provider_charged', 'ledger_posted', 'finished'] as const;
+const RECOVERY = [
+  'started',
+  'intent_created',
+  'provider_charged',
+  'ledger_posted',
+  'finished',
+] as const;
 const SEEN_KEY = 'reckon.play.seen';
 
 function newKey(): string {
@@ -56,13 +54,7 @@ function Stepper({ state }: { state: StepperState }): ReactNode {
         const isDone = i < state.done;
         const isActive = state.active === i;
         const isFailNode = state.outcome === 'fail' && i === state.done;
-        const tone = isFailNode
-          ? 'debit'
-          : isDone
-            ? 'credit'
-            : isActive
-              ? 'hold'
-              : 'idle';
+        const tone = isFailNode ? 'debit' : isDone ? 'credit' : isActive ? 'hold' : 'idle';
         const dot =
           tone === 'credit'
             ? 'border-credit bg-credit'
@@ -86,10 +78,14 @@ function Stepper({ state }: { state: StepperState }): ReactNode {
               </div>
               {isActive ? (
                 <div className="font-mono text-[11px] text-hold">
-                  {state.outcome === 'retry' ? 'provider timed out — retry to confirm' : 'in progress…'}
+                  {state.outcome === 'retry'
+                    ? 'provider timed out — retry to confirm'
+                    : 'in progress…'}
                 </div>
               ) : null}
-              {isFailNode ? <div className="font-mono text-[11px] text-debit">declined — terminal</div> : null}
+              {isFailNode ? (
+                <div className="font-mono text-[11px] text-debit">declined — terminal</div>
+              ) : null}
             </div>
           </li>
         );
@@ -145,7 +141,17 @@ function classify(res: ApiResult<PaymentResponse>, key: string, amountMinor: num
     tone = 'debit';
     label = `${res.status} ${b.error ?? 'error'}`;
   }
-  return { uid: uidSeq++, code: res.status, raw: res.raw, label, tone, intentId, key, amountMinor, retriable };
+  return {
+    uid: uidSeq++,
+    code: res.status,
+    raw: res.raw,
+    label,
+    tone,
+    intentId,
+    key,
+    amountMinor,
+    retriable,
+  };
 }
 
 function stepperFor(res: ApiResult<PaymentResponse>): StepperState {
@@ -189,18 +195,20 @@ function ChaosPanel(): ReactNode {
   const timer = useRef<number | null>(null);
 
   useEffect(() => {
-    apiRequest<ProviderConfig>('GET', '/v1/provider/config').then((res) => {
-      if (res.ok) {
-        setEnabled(true);
-        setCfg({
-          latency_base_ms: res.body.latency_base_ms,
-          decline_rate: res.body.decline_rate,
-          timeout_after_charge_rate: res.body.timeout_after_charge_rate,
-        });
-      } else {
-        setEnabled(false);
-      }
-    }).catch(() => setEnabled(false));
+    apiRequest<ProviderConfig>('GET', '/v1/provider/config')
+      .then((res) => {
+        if (res.ok) {
+          setEnabled(true);
+          setCfg({
+            latency_base_ms: res.body.latency_base_ms,
+            decline_rate: res.body.decline_rate,
+            timeout_after_charge_rate: res.body.timeout_after_charge_rate,
+          });
+        } else {
+          setEnabled(false);
+        }
+      })
+      .catch(() => setEnabled(false));
   }, []);
 
   function push(next: ChaosState): void {
@@ -217,21 +225,25 @@ function ChaosPanel(): ReactNode {
     toast('Provider calmed');
   }
 
-  const hostile = cfg ? cfg.decline_rate > 0 || cfg.timeout_after_charge_rate > 0 || cfg.latency_base_ms > 400 : false;
+  const hostile = cfg
+    ? cfg.decline_rate > 0 || cfg.timeout_after_charge_rate > 0 || cfg.latency_base_ms > 400
+    : false;
 
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <Zap size={15} className={hostile ? 'text-debit' : 'text-hold'} />
-          <span className="font-serif text-[15px] font-semibold text-ink">Make the provider hostile</span>
+          <span className="font-serif text-[15px] font-semibold text-ink">
+            Make the provider hostile
+          </span>
           <InfoPopover label="What provider chaos does">
             {/* TODO(voice): author replaces with the chaos/recovery explanation. */}
             <p>
-              These sliders reconfigure the deliberately-unreliable provider-sim in real time.
-              Turn up <strong>timeout-after-charge</strong>, then create a payment: the charge
-              lands but the response is withheld, the stepper stalls, and a retry with the same
-              key resumes — the ledger still balances.
+              These sliders reconfigure the deliberately-unreliable provider-sim in real time. Turn
+              up <strong>timeout-after-charge</strong>, then create a payment: the charge lands but
+              the response is withheld, the stepper stalls, and a retry with the same key resumes —
+              the ledger still balances.
             </p>
           </InfoPopover>
         </div>
@@ -307,7 +319,14 @@ function ChaosSlider({
         <span className="font-mono text-[11px] text-ink-60">{label}</span>
         <span className="font-mono text-[12px] tnum text-ink">{display}</span>
       </div>
-      <Slider value={value} min={min} max={max} step={step} onValueChange={onChange} aria-label={label} />
+      <Slider
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onValueChange={onChange}
+        aria-label={label}
+      />
     </div>
   );
 }
@@ -323,12 +342,17 @@ export function Playground(): ReactNode {
   const [busy, setBusy] = useState(false);
   const [stepper, setStepper] = useState<StepperState>({ done: 0, active: null, outcome: null });
   const [responses, setResponses] = useState<Resp[]>([]);
-  const [identity, setIdentity] = useState<{ n: number; identical: boolean; charges: number } | null>(null);
+  const [identity, setIdentity] = useState<{
+    n: number;
+    identical: boolean;
+    charges: number;
+  } | null>(null);
   const [showcase, setShowcase] = useState(false);
   const animTimers = useRef<number[]>([]);
 
   const amountMinor = centsFromInput(amount);
-  const amountValid = Number.isInteger(amountMinor) && amountMinor >= 50 && amountMinor <= 9_007_199_254_740_991;
+  const amountValid =
+    Number.isInteger(amountMinor) && amountMinor >= 50 && amountMinor <= 9_007_199_254_740_991;
 
   function clearTimers(): void {
     animTimers.current.forEach((t) => window.clearTimeout(t));
@@ -341,7 +365,10 @@ export function Playground(): ReactNode {
     setStepper({ done: 0, active: 0, outcome: null });
     [500, 1000].forEach((ms, i) => {
       animTimers.current.push(
-        window.setTimeout(() => setStepper((s) => (s.outcome ? s : { done: i + 1, active: i + 1, outcome: null })), ms),
+        window.setTimeout(
+          () => setStepper((s) => (s.outcome ? s : { done: i + 1, active: i + 1, outcome: null })),
+          ms,
+        ),
       );
     });
   }
@@ -501,7 +528,9 @@ export function Playground(): ReactNode {
                 className="h-9 w-full bg-transparent px-1.5 font-mono text-[14px] tnum text-ink outline-none"
               />
             </div>
-            {!amountValid ? <span className="font-mono text-[11px] text-debit">minimum $0.50</span> : null}
+            {!amountValid ? (
+              <span className="font-mono text-[11px] text-debit">minimum $0.50</span>
+            ) : null}
           </label>
 
           <div className="grid grid-cols-2 gap-3">
@@ -521,7 +550,10 @@ export function Playground(): ReactNode {
                 Merchant
                 <InfoPopover label="About the merchant">
                   {/* TODO(voice): author may replace. */}
-                  <p>This demo has no auth — a single seeded merchant is resolved server-side, so payments are charged to it automatically.</p>
+                  <p>
+                    This demo has no auth — a single seeded merchant is resolved server-side, so
+                    payments are charged to it automatically.
+                  </p>
                 </InfoPopover>
               </span>
               <input
@@ -547,20 +579,38 @@ export function Playground(): ReactNode {
             </span>
             <div className="flex items-center gap-1.5 rounded-sm border border-rule bg-paper px-2.5 py-1.5">
               <code className="flex-1 truncate font-mono text-[12px] text-ink">{key}</code>
-              <Button size="icon" variant="ghost" onClick={regenerate} aria-label="Regenerate idempotency key">
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={regenerate}
+                aria-label="Regenerate idempotency key"
+              >
                 <RefreshCw size={14} />
               </Button>
-              <Button size="icon" variant="ghost" onClick={() => void copyKey()} aria-label="Copy idempotency key">
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => void copyKey()}
+                aria-label="Copy idempotency key"
+              >
                 {copied ? <Check size={14} className="text-credit" /> : <Copy size={14} />}
               </Button>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button variant="primary" onClick={() => void createOne()} disabled={busy || !amountValid}>
+            <Button
+              variant="primary"
+              onClick={() => void createOne()}
+              disabled={busy || !amountValid}
+            >
               Create payment
             </Button>
-            <Button variant="accent" onClick={() => void doubleSubmit()} disabled={busy || !amountValid}>
+            <Button
+              variant="accent"
+              onClick={() => void doubleSubmit()}
+              disabled={busy || !amountValid}
+            >
               Double-submit ×5
             </Button>
           </div>
@@ -574,8 +624,8 @@ export function Playground(): ReactNode {
               {/* TODO(voice): author replaces with the recovery-point explanation. */}
               <p>
                 The pipeline advances a durable pointer through these phases, each committed with
-                its effects in one transaction. A crash or timeout leaves the key at its last
-                point; retrying the same key resumes from exactly there.
+                its effects in one transaction. A crash or timeout leaves the key at its last point;
+                retrying the same key resumes from exactly there.
               </p>
             </InfoPopover>
           </div>
@@ -597,7 +647,9 @@ export function Playground(): ReactNode {
                 No responses yet — create a payment, or double-submit one key five times.
               </div>
             ) : (
-              responses.map((r) => <ResponseCard key={r.uid} r={r} onRetry={(x) => void retry(x)} />)
+              responses.map((r) => (
+                <ResponseCard key={r.uid} r={r} onRetry={(x) => void retry(x)} />
+              ))
             )}
           </div>
         </Card>

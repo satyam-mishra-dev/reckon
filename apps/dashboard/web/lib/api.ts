@@ -90,12 +90,7 @@ export interface StatsResponse {
   last_reconciliation: Reconciliation | null;
 }
 
-export type IntentStatus =
-  | 'created'
-  | 'processing'
-  | 'requires_retry'
-  | 'succeeded'
-  | 'failed';
+export type IntentStatus = 'created' | 'processing' | 'requires_retry' | 'succeeded' | 'failed';
 
 export interface Intent {
   id: string;
@@ -148,7 +143,13 @@ export interface IntentDetail {
     created_at: string;
   } | null;
   transactions: (Omit<LedgerTransaction, 'intent_id'> & { entries: LedgerEntry[] })[];
-  events: { id: string; type: string; payload: unknown; created_at: string; dispatched_at: string | null }[];
+  events: {
+    id: string;
+    type: string;
+    payload: unknown;
+    created_at: string;
+    dispatched_at: string | null;
+  }[];
   deliveries: {
     id: string;
     event_id: string;

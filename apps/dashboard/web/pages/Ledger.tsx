@@ -48,80 +48,92 @@ function AccountsPanel(): ReactNode {
           <InfoPopover label="How balances are derived">
             {/* TODO(voice): author replaces with the derived-balance explanation. */}
             <p>
-              The <code>balances</code> relation is a SQL view:{' '}
-              <code>SUM(credit − debit)</code> grouped by account over the append-only entries.
-              Nothing is stored — every read recomputes. Positive is credit-side, negative
-              debit-side.
+              The <code>balances</code> relation is a SQL view: <code>SUM(credit − debit)</code>{' '}
+              grouped by account over the append-only entries. Nothing is stored — every read
+              recomputes. Positive is credit-side, negative debit-side.
             </p>
           </InfoPopover>
         </div>
-        <span className="font-mono text-[11px] text-ink-45">balances are computed, never stored</span>
+        <span className="font-mono text-[11px] text-ink-45">
+          balances are computed, never stored
+        </span>
       </div>
       {error && !data ? (
         <div className="p-4">
-          <ErrorState>Could not load accounts. The API may be starting — it retries automatically.</ErrorState>
+          <ErrorState>
+            Could not load accounts. The API may be starting — it retries automatically.
+          </ErrorState>
         </div>
       ) : (
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[480px] text-[13px]">
-          <thead>
-            <tr className="border-b border-rule text-left font-mono text-[11px] text-ink-45">
-              <th className="px-4 py-2 font-normal">Account</th>
-              <th className="px-4 py-2 font-normal">Side</th>
-              <th className="px-4 py-2 text-right font-normal">Balance</th>
-              <th className="px-4 py-2 text-right font-normal">Recompute</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && !data
-              ? Array.from({ length: 4 }).map((_, i) => (
-                  <tr key={i} className="border-b border-rule/60">
-                    <td className="px-4 py-2.5" colSpan={4}>
-                      <Skeleton className="h-4 w-full" />
-                    </td>
-                  </tr>
-                ))
-              : data?.accounts.map((a) => {
-                  const bal = BigInt(a.balance_minor);
-                  const side = bal > 0n ? 'credit' : bal < 0n ? 'debit' : 'zero';
-                  return (
-                    <tr
-                      key={a.account_id}
-                      className={`border-b border-rule/60 transition-colors ${flash === a.account_id ? 'bg-action-wash' : ''}`}
-                    >
-                      <td className="px-4 py-2.5 font-medium text-ink">{accountLabel(a.type)}</td>
-                      <td className="px-4 py-2.5">
-                        <Badge tone={side === 'credit' ? 'credit' : side === 'debit' ? 'debit' : 'neutral'}>
-                          {side}
-                        </Badge>
-                      </td>
-                      <td
-                        className={`px-4 py-2.5 text-right font-mono tnum ${bal < 0n ? 'text-debit' : bal > 0n ? 'text-credit' : 'text-ink-60'}`}
-                      >
-                        {money(a.balance_minor, a.currency)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => recompute(a.account_id)}
-                          aria-label={`Recompute ${accountLabel(a.type)}`}
-                        >
-                          <RefreshCw size={13} /> Recompute
-                        </Button>
+          <table className="w-full min-w-[480px] text-[13px]">
+            <thead>
+              <tr className="border-b border-rule text-left font-mono text-[11px] text-ink-45">
+                <th className="px-4 py-2 font-normal">Account</th>
+                <th className="px-4 py-2 font-normal">Side</th>
+                <th className="px-4 py-2 text-right font-normal">Balance</th>
+                <th className="px-4 py-2 text-right font-normal">Recompute</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && !data
+                ? Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={i} className="border-b border-rule/60">
+                      <td className="px-4 py-2.5" colSpan={4}>
+                        <Skeleton className="h-4 w-full" />
                       </td>
                     </tr>
-                  );
-                })}
-          </tbody>
-        </table>
+                  ))
+                : data?.accounts.map((a) => {
+                    const bal = BigInt(a.balance_minor);
+                    const side = bal > 0n ? 'credit' : bal < 0n ? 'debit' : 'zero';
+                    return (
+                      <tr
+                        key={a.account_id}
+                        className={`border-b border-rule/60 transition-colors ${flash === a.account_id ? 'bg-action-wash' : ''}`}
+                      >
+                        <td className="px-4 py-2.5 font-medium text-ink">{accountLabel(a.type)}</td>
+                        <td className="px-4 py-2.5">
+                          <Badge
+                            tone={
+                              side === 'credit' ? 'credit' : side === 'debit' ? 'debit' : 'neutral'
+                            }
+                          >
+                            {side}
+                          </Badge>
+                        </td>
+                        <td
+                          className={`px-4 py-2.5 text-right font-mono tnum ${bal < 0n ? 'text-debit' : bal > 0n ? 'text-credit' : 'text-ink-60'}`}
+                        >
+                          {money(a.balance_minor, a.currency)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => recompute(a.account_id)}
+                            aria-label={`Recompute ${accountLabel(a.type)}`}
+                          >
+                            <RefreshCw size={13} /> Recompute
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+            </tbody>
+          </table>
         </div>
       )}
     </Card>
   );
 }
 
-function splitEntries(entries: LedgerEntry[]): { debits: LedgerEntry[]; credits: LedgerEntry[]; dTot: bigint; cTot: bigint } {
+function splitEntries(entries: LedgerEntry[]): {
+  debits: LedgerEntry[];
+  credits: LedgerEntry[];
+  dTot: bigint;
+  cTot: bigint;
+} {
   const debits = entries.filter((e) => e.direction === 'debit');
   const credits = entries.filter((e) => e.direction === 'credit');
   const dTot = debits.reduce((s, e) => s + BigInt(e.amount_minor), 0n);
@@ -129,8 +141,16 @@ function splitEntries(entries: LedgerEntry[]): { debits: LedgerEntry[]; credits:
   return { debits, credits, dTot, cTot };
 }
 
-function TransactionSheet({ tx, onClose }: { tx: LedgerTransaction | null; onClose: () => void }): ReactNode {
-  const { debits, credits, dTot, cTot } = tx ? splitEntries(tx.entries) : { debits: [], credits: [], dTot: 0n, cTot: 0n };
+function TransactionSheet({
+  tx,
+  onClose,
+}: {
+  tx: LedgerTransaction | null;
+  onClose: () => void;
+}): ReactNode {
+  const { debits, credits, dTot, cTot } = tx
+    ? splitEntries(tx.entries)
+    : { debits: [], credits: [], dTot: 0n, cTot: 0n };
   const balanced = dTot === cTot;
   return (
     <Sheet
@@ -160,7 +180,10 @@ function TransactionSheet({ tx, onClose }: { tx: LedgerTransaction | null; onClo
             <div className="grid grid-cols-2">
               <div className="border-r border-rule">
                 {debits.map((e, i) => (
-                  <div key={i} className="flex items-center justify-between gap-2 px-3 py-2 text-[12px]">
+                  <div
+                    key={i}
+                    className="flex items-center justify-between gap-2 px-3 py-2 text-[12px]"
+                  >
                     <span className="text-ink-60">{accountLabel(e.account_type)}</span>
                     <span className="font-mono tnum text-debit">{money(e.amount_minor)}</span>
                   </div>
@@ -168,7 +191,10 @@ function TransactionSheet({ tx, onClose }: { tx: LedgerTransaction | null; onClo
               </div>
               <div>
                 {credits.map((e, i) => (
-                  <div key={i} className="flex items-center justify-between gap-2 px-3 py-2 text-[12px]">
+                  <div
+                    key={i}
+                    className="flex items-center justify-between gap-2 px-3 py-2 text-[12px]"
+                  >
                     <span className="text-ink-60">{accountLabel(e.account_type)}</span>
                     <span className="font-mono tnum text-credit">{money(e.amount_minor)}</span>
                   </div>
@@ -190,7 +216,9 @@ function TransactionSheet({ tx, onClose }: { tx: LedgerTransaction | null; onClo
           <div
             className={`rounded-sm border px-3 py-2 text-[13px] ${balanced ? 'border-credit/35 bg-credit-wash text-credit' : 'border-debit/35 bg-debit-wash text-debit'}`}
           >
-            {balanced ? 'Balanced — debits equal credits.' : 'Unbalanced — this should never happen.'}
+            {balanced
+              ? 'Balanced — debits equal credits.'
+              : 'Unbalanced — this should never happen.'}
           </div>
         </div>
       ) : null}
@@ -269,37 +297,45 @@ function TransactionsPanel(): ReactNode {
         </div>
       ) : (
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-[13px]">
-          <thead>
-            <tr className="border-b border-rule text-left font-mono text-[11px] text-ink-45">
-              <th className="px-4 py-2 font-normal">Posted</th>
-              <th className="px-4 py-2 font-normal">Kind</th>
-              <th className="px-4 py-2 font-normal">Intent</th>
-              <th className="px-4 py-2 text-right font-normal">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((t) => {
-              const { dTot } = splitEntries(t.entries);
-              return (
-                <tr
-                  key={t.id}
-                  tabIndex={0}
-                  onClick={() => setOpen(t)}
-                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setOpen(t))}
-                  className="cursor-pointer border-b border-rule/60 hover:bg-wash focus:bg-wash focus:outline-none"
-                >
-                  <td className="px-4 py-2.5 font-mono text-[12px] text-ink-60">{ts(t.posted_at)}</td>
-                  <td className="px-4 py-2.5">
-                    <StatusBadge status={t.kind} />
-                  </td>
-                  <td className="px-4 py-2.5 font-mono text-[12px] text-ink-60">{shortId(t.intent_id)}</td>
-                  <td className="px-4 py-2.5 text-right font-mono tnum text-ink">{money(dTot.toString())}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+          <table className="w-full min-w-[560px] text-[13px]">
+            <thead>
+              <tr className="border-b border-rule text-left font-mono text-[11px] text-ink-45">
+                <th className="px-4 py-2 font-normal">Posted</th>
+                <th className="px-4 py-2 font-normal">Kind</th>
+                <th className="px-4 py-2 font-normal">Intent</th>
+                <th className="px-4 py-2 text-right font-normal">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((t) => {
+                const { dTot } = splitEntries(t.entries);
+                return (
+                  <tr
+                    key={t.id}
+                    tabIndex={0}
+                    onClick={() => setOpen(t)}
+                    onKeyDown={(e) =>
+                      (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setOpen(t))
+                    }
+                    className="cursor-pointer border-b border-rule/60 hover:bg-wash focus:bg-wash focus:outline-none"
+                  >
+                    <td className="px-4 py-2.5 font-mono text-[12px] text-ink-60">
+                      {ts(t.posted_at)}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <StatusBadge status={t.kind} />
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-[12px] text-ink-60">
+                      {shortId(t.intent_id)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono tnum text-ink">
+                      {money(dTot.toString())}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -308,10 +344,20 @@ function TransactionsPanel(): ReactNode {
           {total > 0 ? `${offset + 1}–${Math.min(offset + PAGE, total)} of ${total}` : '0 of 0'}
         </span>
         <div className="flex gap-1.5">
-          <Button size="sm" variant="outline" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={offset === 0}
+            onClick={() => setOffset(Math.max(0, offset - PAGE))}
+          >
             Newer
           </Button>
-          <Button size="sm" variant="outline" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={offset + PAGE >= total}
+            onClick={() => setOffset(offset + PAGE)}
+          >
             Older
           </Button>
         </div>
@@ -331,9 +377,9 @@ export function Ledger(): ReactNode {
         <PageTitle>The ledger</PageTitle>
         <p className="max-w-2xl text-[14px] text-ink-60">
           {/* TODO(voice): author may replace. Factual placeholder. */}
-          Every payment posts balanced transactions to an append-only ledger. Account balances
-          here are summed live from those entries — open any transaction to see debits and credits
-          settle to the same figure.
+          Every payment posts balanced transactions to an append-only ledger. Account balances here
+          are summed live from those entries — open any transaction to see debits and credits settle
+          to the same figure.
         </p>
       </div>
       <AccountsPanel />

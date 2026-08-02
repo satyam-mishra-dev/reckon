@@ -22,7 +22,11 @@ app.addContentTypeParser('*', { parseAs: 'string' }, (_request, body, done) => {
   done(null, body);
 });
 
-async function proxy(request: FastifyRequest, reply: FastifyReply, target: string): Promise<unknown> {
+async function proxy(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  target: string,
+): Promise<unknown> {
   const headers: Record<string, string> = {};
   for (const name of ['content-type', 'idempotency-key', 'accept'] as const) {
     const value = request.headers[name];
@@ -56,7 +60,9 @@ app.all('/api/*', (request, reply) =>
 );
 // OpenAPI frame, served from the API's own origin path so swagger-ui's relative
 // asset URLs resolve same-origin through the dashboard.
-app.all('/docs', (request, reply) => proxy(request, reply, `${apiUrl}${request.raw.url ?? '/docs'}`));
+app.all('/docs', (request, reply) =>
+  proxy(request, reply, `${apiUrl}${request.raw.url ?? '/docs'}`),
+);
 app.all('/docs/*', (request, reply) => proxy(request, reply, `${apiUrl}${request.raw.url ?? ''}`));
 app.get('/openapi.json', (request, reply) => proxy(request, reply, `${apiUrl}/openapi.json`));
 

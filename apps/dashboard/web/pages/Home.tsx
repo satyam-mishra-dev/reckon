@@ -7,7 +7,15 @@ import { usePoll, useDocumentTitle } from '../lib/hooks';
 import { majorAmount } from '../lib/format';
 import { nudgeLedger } from '../components/BalanceBar';
 import { ArchitectureDiagram } from '../components/ArchitectureDiagram';
-import { Button, buttonClass, Card, Eyebrow, InfoPopover, PageTitle, Skeleton } from '../components/ui';
+import {
+  Button,
+  buttonClass,
+  Card,
+  Eyebrow,
+  InfoPopover,
+  PageTitle,
+  Skeleton,
+} from '../components/ui';
 
 function sum(rec: Record<string, number>): number {
   return Object.values(rec).reduce((a, b) => a + b, 0);
@@ -83,10 +91,10 @@ export function Home(): ReactNode {
         {/* TODO(voice): replace with the author's one-paragraph pitch. Kept factual + neutral. */}
         <p className="max-w-2xl text-[15px] leading-relaxed text-ink-60">
           Reckon runs idempotent payment intents across a deliberately unreliable card provider,
-          records every movement in an append-only double-entry ledger, and delivers signed
-          webhooks with retries and a dead-letter queue. A reconciler audits the ledger against
-          the provider continuously. Every figure on this page is read live from the running
-          stack — nothing here is illustrative.
+          records every movement in an append-only double-entry ledger, and delivers signed webhooks
+          with retries and a dead-letter queue. A reconciler audits the ledger against the provider
+          continuously. Every figure on this page is read live from the running stack — nothing here
+          is illustrative.
         </p>
 
         <div className="flex flex-wrap gap-2">
@@ -119,10 +127,15 @@ export function Home(): ReactNode {
           value={webhooksDelivered.toLocaleString()}
           tone="credit"
           loading={loading}
-          sub={data ? `${data.events.dispatched}/${data.events.total} events dispatched` : undefined}
+          sub={
+            data ? `${data.events.dispatched}/${data.events.total} events dispatched` : undefined
+          }
           info={
             /* TODO(voice): author replaces with their explanation. */
-            <p>Signed deliveries the worker confirmed as 2xx. Failed ones retry with backoff, then dead-letter.</p>
+            <p>
+              Signed deliveries the worker confirmed as 2xx. Failed ones retry with backoff, then
+              dead-letter.
+            </p>
           }
         />
         <StatTile
@@ -152,8 +165,8 @@ export function Home(): ReactNode {
             {/* TODO(voice): author may expand. */}
             <p>
               The same flowchart shipped in the README, rendered to the ledger tokens. Client to
-              API, through idempotency and the double-entry ledger, out to the worker, provider
-              and webhooks — with the reconciler auditing against provider truth.
+              API, through idempotency and the double-entry ledger, out to the worker, provider and
+              webhooks — with the reconciler auditing against provider truth.
             </p>
           </InfoPopover>
         </div>

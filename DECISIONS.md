@@ -62,7 +62,7 @@ the largest integer a JS number carries exactly: `amount_minor` is a JS number
 on the wire, so above it the charged amount silently diverges from the
 requested one, and above 2^63 the `bigint` column overflows and wedges the key
 at `started` forever. Rejected: a bignum JSON codec (huge complexity for a
-range no real card payment reaches). The API also rejects a *non-numeric*
+range no real card payment reaches). The API also rejects a _non-numeric_
 `amount_minor` before ajv can coerce `true`→1 or `"100"`→100 into a real charge.
 
 ## Fee rounding: floor, in bigint
@@ -105,7 +105,7 @@ The lock is not just `locked_at`; every actor that takes it (API, completer,
 reconciler) stamps a fresh `locked_by` uuid, and every unlock and every
 `recovery_point` advance carries `AND locked_by = <owner>` (plus `AND
 recovery_point = <expected>`; create also `AND intent_id IS NULL`). Why: a
-stalled actor whose *stale* lock was stolen by another must not, on resuming,
+stalled actor whose _stale_ lock was stolen by another must not, on resuming,
 free the new owner's lock (→ two actors, duplicate webhooks) or regress the
 pointer (→ double ledger post / a wedged key). A guarded update that hits 0
 rows aborts the pipeline (replay-or-409) instead of proceeding. `locked_at`
@@ -123,7 +123,7 @@ machine (`RETRY_EXHAUSTED`, the edge that had no caller before) and stores a
 stable 500 on the key, so the client gets a terminal answer and the loop stops.
 The real fix for the observed poison (`amount_minor` > 2^63 overflowing the
 intent INSERT) is the schema maximum above; this is the defence-in-depth
-backstop for any *other* permanent stall.
+backstop for any _other_ permanent stall.
 
 ## Provider-config passthrough is a gated demo control
 

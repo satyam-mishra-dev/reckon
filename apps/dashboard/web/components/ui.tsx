@@ -27,7 +27,11 @@ const SIZE: Record<Size, string> = {
 };
 
 /** Shared button styling — usable on <button>, <a> and <Link> to avoid nesting. */
-export function buttonClass(variant: Variant = 'outline', size: Size = 'md', className?: string): string {
+export function buttonClass(
+  variant: Variant = 'outline',
+  size: Size = 'md',
+  className?: string,
+): string {
   return cn(
     'inline-flex items-center justify-center gap-1.5 rounded-sm font-medium whitespace-nowrap',
     'transition-[background-color,color,opacity] duration-150 select-none',

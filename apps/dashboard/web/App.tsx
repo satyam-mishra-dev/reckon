@@ -11,7 +11,10 @@ function NotFound(): ReactNode {
     <div className="py-10">
       <h1 className="font-serif text-2xl font-semibold">Page not found</h1>
       <p className="mt-2 text-ink-60">
-        That route doesn&rsquo;t exist. <a className="link" href="/">Back to the overview.</a>
+        That route doesn&rsquo;t exist.{' '}
+        <a className="link" href="/">
+          Back to the overview.
+        </a>
       </p>
     </div>
   );

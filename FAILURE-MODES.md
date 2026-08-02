@@ -131,7 +131,7 @@ container. Its lock now looks stale, so a second actor (a retry, the completer,
 or the reconciler) legitimately steals it and finishes the payment. Then the
 original wakes up, still holding what it thinks is its lock.
 
-**What happens.** Nothing harmful — the lock is *fenced*. Each taker stamps a
+**What happens.** Nothing harmful — the lock is _fenced_. Each taker stamps a
 fresh `locked_by` owner token; every unlock and every `recovery_point` advance
 is guarded by `AND locked_by = <owner> AND recovery_point = <expected>`. The
 woken original's next guarded update matches 0 rows (the token is now someone
@@ -167,7 +167,7 @@ plus webhook spam, with no client ever getting a terminal answer.
 
 **What happens.** Two layers. The **schema maximum** (2^53−1) now rejects the
 oversize amount at the API boundary, so this specific poison can't be created
-again. For any *other* permanent stall, a per-key `completer_attempts` counter
+again. For any _other_ permanent stall, a per-key `completer_attempts` counter
 bounds the re-drives: past the cap (25) the completer walks the intent to
 `failed` through the state machine (`RETRY_EXHAUSTED`) and stores a stable `500`
 response on the key.

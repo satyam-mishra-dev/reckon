@@ -21,14 +21,58 @@ const NODES: Node[] = [
   { id: 'client', x: 372, y: 12, w: 116, h: 38, title: 'Client' },
   { id: 'dash', x: 150, y: 78, w: 150, h: 38, title: 'Dashboard', sub: '+ playground' },
   { id: 'api', x: 356, y: 78, w: 148, h: 38, title: 'API', sub: 'Fastify' },
-  { id: 'reads', x: 150, y: 158, w: 130, h: 48, title: 'Read models', sub: '/v1', accent: 'action' },
-  { id: 'idem', x: 322, y: 158, w: 122, h: 48, title: 'Idempotency', sub: 'keys · recovery points' },
+  {
+    id: 'reads',
+    x: 150,
+    y: 158,
+    w: 130,
+    h: 48,
+    title: 'Read models',
+    sub: '/v1',
+    accent: 'action',
+  },
+  {
+    id: 'idem',
+    x: 322,
+    y: 158,
+    w: 122,
+    h: 48,
+    title: 'Idempotency',
+    sub: 'keys · recovery points',
+  },
   { id: 'intents', x: 322, y: 220, w: 122, h: 48, title: 'Payment intents', sub: 'state machine' },
-  { id: 'ledger', x: 462, y: 158, w: 122, h: 48, title: 'Ledger', sub: 'double-entry', accent: 'credit' },
+  {
+    id: 'ledger',
+    x: 462,
+    y: 158,
+    w: 122,
+    h: 48,
+    title: 'Ledger',
+    sub: 'double-entry',
+    accent: 'credit',
+  },
   { id: 'outbox', x: 462, y: 220, w: 122, h: 48, title: 'Outbox', sub: 'events · same TX' },
-  { id: 'recon', x: 626, y: 189, w: 140, h: 48, title: 'Reconciler', sub: 'proves zero drift', accent: 'action' },
+  {
+    id: 'recon',
+    x: 626,
+    y: 189,
+    w: 140,
+    h: 48,
+    title: 'Reconciler',
+    sub: 'proves zero drift',
+    accent: 'action',
+  },
   { id: 'worker', x: 356, y: 300, w: 148, h: 44, title: 'Worker', sub: 'job queue · SKIP LOCKED' },
-  { id: 'provider', x: 138, y: 384, w: 154, h: 48, title: 'Provider-sim', sub: 'deliberately unreliable', accent: 'hold' },
+  {
+    id: 'provider',
+    x: 138,
+    y: 384,
+    w: 154,
+    h: 48,
+    title: 'Provider-sim',
+    sub: 'deliberately unreliable',
+    accent: 'hold',
+  },
   { id: 'webhooks', x: 356, y: 384, w: 154, h: 48, title: 'Webhooks', sub: 'HMAC · backoff · DLQ' },
   { id: 'receiver', x: 372, y: 466, w: 116, h: 38, title: 'Receiver' },
 ];
@@ -90,13 +134,30 @@ export function ArchitectureDiagram(): ReactNode {
       className="h-auto w-full"
     >
       <defs>
-        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <marker
+          id="arrow"
+          viewBox="0 0 10 10"
+          refX="8"
+          refY="5"
+          markerWidth="6"
+          markerHeight="6"
+          orient="auto-start-reverse"
+        >
           <path d="M0,0 L10,5 L0,10 z" fill="var(--color-ink-60)" />
         </marker>
       </defs>
 
       {/* apps/api group */}
-      <rect x={306} y={140} width={296} height={144} rx={4} fill="none" stroke="var(--color-rule)" strokeDasharray="3 3" />
+      <rect
+        x={306}
+        y={140}
+        width={296}
+        height={144}
+        rx={4}
+        fill="none"
+        stroke="var(--color-rule)"
+        strokeDasharray="3 3"
+      />
       <text x={312} y={135} fontFamily="var(--font-mono)" fontSize={10} fill="var(--color-ink-45)">
         apps/api
       </text>
@@ -119,7 +180,13 @@ export function ArchitectureDiagram(): ReactNode {
               markerStart={e.bidir ? 'url(#arrow)' : undefined}
             />
             {e.label ? (
-              <text x={mx + 4} y={my - 2} fontFamily="var(--font-mono)" fontSize={9} fill="var(--color-ink-45)">
+              <text
+                x={mx + 4}
+                y={my - 2}
+                fontFamily="var(--font-mono)"
+                fontSize={9}
+                fill="var(--color-ink-45)"
+              >
                 {e.label}
               </text>
             ) : null}
