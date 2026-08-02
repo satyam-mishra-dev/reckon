@@ -413,6 +413,21 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         return { reports: result.rows };
       },
     );
+
+    // Ops trigger for the dashboard's "Run reconciler now": enqueue a reconcile
+    // job unless one is already live (mirrors the worker's enqueueReconcileJob —
+    // the partial unique index makes it race-safe). The worker executes it and
+    // writes the report; the dashboard polls GET /v1/reconciliations for it.
+    app.post('/v1/reconciliations', async () => {
+      const result = await pool.query<{ id: string }>(
+        `INSERT INTO jobs (kind, payload)
+         VALUES ('reconcile', '{}'::jsonb)
+         ON CONFLICT (kind) WHERE kind = 'reconcile' AND status IN ('pending', 'running')
+           DO NOTHING
+         RETURNING id`,
+      );
+      return { enqueued: result.rows.length > 0, job_id: result.rows[0]?.id ?? null };
+    });
   });
 
   return app;
