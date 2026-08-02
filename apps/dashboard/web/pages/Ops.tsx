@@ -198,7 +198,8 @@ function IntentsTab(): ReactNode {
           </EmptyState>
         </div>
       ) : (
-        <table className="w-full text-[13px]">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] text-[13px]">
           <thead>
             <tr className="border-b border-rule text-left font-mono text-[11px] text-ink-45">
               <th className="px-4 py-2 font-normal">Intent</th>
@@ -228,6 +229,7 @@ function IntentsTab(): ReactNode {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       <div className="flex items-center justify-between px-4 py-3 font-mono text-[11px] text-ink-45">
