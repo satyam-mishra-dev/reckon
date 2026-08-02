@@ -1,0 +1,142 @@
+/* Fonts — bundled via @fontsource (no CDN). Only the weights the UI uses. */
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/source-serif-4/400.css';
+@import '@fontsource/source-serif-4/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
+@import 'tailwindcss';
+
+/* Design tokens (ui-design-reference.md §2.2). These hexes are LAW. */
+@theme {
+  --color-paper: #fbfaf7; /* background — warm white */
+  --color-ink: #17181a; /* primary text */
+  --color-rule: #e4e1da; /* hairlines, borders */
+  --color-debit: #b3232e; /* carmine — debit figures, failure */
+  --color-credit: #1e6b4f; /* ledger green — credit, success */
+  --color-action: #1f4fd8; /* interactive blue — buttons, links, focus */
+  --color-hold: #8a6d1f; /* pending / processing amber-olive */
+
+  /* One paper tint step, derived by alpha over paper (no new hues). */
+  --color-ink-60: color-mix(in srgb, #17181a 60%, transparent);
+  --color-ink-45: color-mix(in srgb, #17181a 45%, transparent);
+  --color-wash: color-mix(in srgb, #17181a 3%, transparent);
+  --color-debit-wash: color-mix(in srgb, #b3232e 8%, transparent);
+  --color-credit-wash: color-mix(in srgb, #1e6b4f 8%, transparent);
+  --color-action-wash: color-mix(in srgb, #1f4fd8 8%, transparent);
+  --color-hold-wash: color-mix(in srgb, #8a6d1f 12%, transparent);
+
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Source Serif 4', ui-serif, Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    min-height: 100dvh;
+  }
+  /* Keyboard focus is visible everywhere (quality floor). */
+  :focus-visible {
+    outline: 2px solid var(--color-action);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  ::selection {
+    background: var(--color-action-wash);
+  }
+  /* All numeric data lines up. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Flat card: 1px rule border, NO shadow (§2.2). Elevation is dialogs only. */
+  .card {
+    background: var(--color-paper);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-md);
+  }
+  .hairline {
+    border-color: var(--color-rule);
+  }
+  /* Section eyebrow: all-caps micro label, quiet. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-60);
+  }
+  .link {
+    color: var(--color-action);
+    text-decoration: none;
+  }
+  .link:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+}
+
+/* Quiet entrance eases for overlays + the Balance Bar weigh-and-settle. */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes sheetIn {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+@keyframes dialogIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+}
+@keyframes weigh {
+  0% {
+    transform: rotate(0deg);
+  }
+  35% {
+    transform: rotate(-1.6deg);
+  }
+  70% {
+    transform: rotate(0.7deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+@keyframes fillGrow {
+  from {
+    transform: scaleX(0.6);
+  }
+}
+
+/* Reduced motion: kill transitions/animations, keep numbers updating. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

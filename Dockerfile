@@ -23,5 +23,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# The dashboard is the one app with a build step (Vite → static bundle in
+# apps/dashboard/dist). Everything else runs from source via tsx; the dashboard
+# server (tsx) then serves this prebuilt dist. devDeps (vite) are present because
+# npm ci ran before NODE_ENV was set to production.
+RUN npm run build -w apps/dashboard
 # Default command is a lie detector: compose must always override it.
 CMD ["node", "-e", "console.error('set a command in docker-compose.yml'); process.exit(1)"]

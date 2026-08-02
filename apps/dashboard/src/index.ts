@@ -1,39 +1,30 @@
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import Fastify, { type FastifyReply } from 'fastify';
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
+import fastifyStatic from '@fastify/static';
 
-// Dashboard-lite: a static file server for hand-written HTML/CSS/JS plus a
-// tiny same-origin proxy to the API (no CORS, no build step, no framework —
-// see DECISIONS.md). The browser only ever talks to this process.
+// Dashboard server: serves the built React app (../dist) with a client-side
+// routing fallback, plus same-origin proxies to the API (:4800) so the browser
+// only ever talks to this process — /api/* (the read models + create endpoint)
+// and /docs + /openapi.json (the OpenAPI frame). The proxy forwards raw bytes.
 
-const PUBLIC_DIR = fileURLToPath(new URL('../public', import.meta.url));
+const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const port = Number(process.env.PORT ?? 4801);
-const apiUrl = process.env.API_URL ?? 'http://localhost:4800';
-
-// No slashes or leading dots allowed — the regex is the traversal guard.
-const FILE_NAME = /^[a-z0-9][a-z0-9._-]*\.(html|css|js|svg)$/;
-const MIME: Record<string, string> = {
-  html: 'text/html; charset=utf-8',
-  css: 'text/css; charset=utf-8',
-  js: 'text/javascript; charset=utf-8',
-  svg: 'image/svg+xml',
-};
+// 127.0.0.1, not localhost: undici resolves localhost to ::1 first and a v4-only
+// API refuses the connection. Compose overrides this with API_URL=http://api:4800.
+const apiUrl = process.env.API_URL ?? 'http://127.0.0.1:4800';
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
 
-// The proxy forwards bytes, never re-serialized JSON: keep bodies raw.
+// Keep proxied bodies raw (never re-serialize JSON).
 app.removeAllContentTypeParsers();
 app.addContentTypeParser('*', { parseAs: 'string' }, (_request, body, done) => {
   done(null, body);
 });
 
-app.get('/healthz', async () => ({ status: 'ok' }));
-
-app.all('/api/*', async (request, reply) => {
-  const target = `${apiUrl}${(request.raw.url ?? '').slice('/api'.length)}`;
+async function proxy(request: FastifyRequest, reply: FastifyReply, target: string): Promise<unknown> {
   const headers: Record<string, string> = {};
-  for (const name of ['content-type', 'idempotency-key'] as const) {
+  for (const name of ['content-type', 'idempotency-key', 'accept'] as const) {
     const value = request.headers[name];
     if (typeof value === 'string') headers[name] = value;
   }
@@ -46,33 +37,43 @@ app.all('/api/*', async (request, reply) => {
       body: hasBody && typeof request.body === 'string' ? request.body : undefined,
       signal: AbortSignal.timeout(30_000),
     });
-    const text = await response.text();
-    return reply
-      .code(response.status)
-      .type(response.headers.get('content-type') ?? 'application/json')
-      .send(text);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    reply.code(response.status);
+    const contentType = response.headers.get('content-type');
+    if (contentType !== null) reply.type(contentType);
+    return reply.send(buffer);
   } catch (err) {
-    request.log.warn({ err, target }, 'api proxy failed');
-    return reply.code(502).send({ error: 'api_unreachable' });
-  }
-});
-
-async function sendFile(reply: FastifyReply, name: string): Promise<unknown> {
-  const ext = name.slice(name.lastIndexOf('.') + 1);
-  try {
-    const content = await readFile(join(PUBLIC_DIR, name));
-    return reply.type(MIME[ext] ?? 'application/octet-stream').send(content);
-  } catch {
-    return reply.code(404).send({ error: 'not_found' });
+    request.log.warn({ err, target }, 'upstream proxy failed');
+    return reply.code(502).send({ error: 'upstream_unreachable' });
   }
 }
 
-app.get('/', async (_request, reply) => sendFile(reply, 'index.html'));
+app.get('/healthz', async () => ({ status: 'ok' }));
 
-app.get<{ Params: { file: string } }>('/:file', async (request, reply) => {
-  const name = request.params.file;
-  if (!FILE_NAME.test(name)) return reply.code(404).send({ error: 'not_found' });
-  return sendFile(reply, name);
+// API read models + create endpoint. /api/v1/x -> :4800/v1/x
+app.all('/api/*', (request, reply) =>
+  proxy(request, reply, `${apiUrl}${(request.raw.url ?? '').slice('/api'.length)}`),
+);
+// OpenAPI frame, served from the API's own origin path so swagger-ui's relative
+// asset URLs resolve same-origin through the dashboard.
+app.all('/docs', (request, reply) => proxy(request, reply, `${apiUrl}${request.raw.url ?? '/docs'}`));
+app.all('/docs/*', (request, reply) => proxy(request, reply, `${apiUrl}${request.raw.url ?? ''}`));
+app.get('/openapi.json', (request, reply) => proxy(request, reply, `${apiUrl}/openapi.json`));
+
+const indexHtml = await readFile(new URL('../dist/index.html', import.meta.url));
+
+await app.register(fastifyStatic, { root: DIST, wildcard: false });
+
+// Client-side routes (/, /play, /ledger, /ops) fall through to the SPA shell.
+app.setNotFoundHandler((request, reply) => {
+  if (
+    request.method === 'GET' &&
+    !request.url.startsWith('/api') &&
+    !request.url.startsWith('/docs')
+  ) {
+    return reply.type('text/html; charset=utf-8').send(indexHtml);
+  }
+  return reply.code(404).send({ error: 'not_found' });
 });
 
 await app.listen({ port, host: '0.0.0.0' });
@@ -80,7 +81,7 @@ await app.listen({ port, host: '0.0.0.0' });
 let shuttingDown = false;
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
-    if (shuttingDown) process.exit(1); // second signal: hard exit (audit O7)
+    if (shuttingDown) process.exit(1);
     shuttingDown = true;
     app
       .close()
