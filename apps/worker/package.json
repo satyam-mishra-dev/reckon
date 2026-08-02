@@ -1,5 +1,5 @@
 {
-  "name": "@tally/worker",
+  "name": "@reckon/worker",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,15 +10,15 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@tally/api": "*",
-    "@tally/core": "*",
+    "@reckon/api": "*",
+    "@reckon/core": "*",
     "pg": "^8.22.0",
     "pino": "^10.3.1"
   },
   "devDependencies": {
-    "@tally/db": "*",
-    "@tally/provider-sim": "*",
-    "@tally/receiver": "*",
+    "@reckon/db": "*",
+    "@reckon/provider-sim": "*",
+    "@reckon/receiver": "*",
     "@testcontainers/postgresql": "^11.14.0",
     "@types/pg": "^8.20.3",
     "node-pg-migrate": "^9.0.0"

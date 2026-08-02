@@ -12,7 +12,7 @@ import { InfoPopover, Skeleton } from './ui';
 
 /** Anyone who moves money can nudge the bar to re-verify immediately. */
 export function nudgeLedger(): void {
-  window.dispatchEvent(new Event('tally:ledger'));
+  window.dispatchEvent(new Event('reckon:ledger'));
 }
 
 // The balances view sums credits as +, debits as − (see migrations/…_init.sql).
@@ -48,8 +48,8 @@ export function BalanceBar(): ReactNode {
   // Refresh on demand (after a payment) without waiting for the poll tick.
   useEffect(() => {
     const on = (): void => void refresh();
-    window.addEventListener('tally:ledger', on);
-    return () => window.removeEventListener('tally:ledger', on);
+    window.addEventListener('reckon:ledger', on);
+    return () => window.removeEventListener('reckon:ledger', on);
   }, [refresh]);
 
   const view = useMemo(() => {

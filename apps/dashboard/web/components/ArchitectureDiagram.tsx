@@ -86,7 +86,7 @@ export function ArchitectureDiagram(): ReactNode {
     <svg
       viewBox="0 0 780 516"
       role="img"
-      aria-label="Tally architecture: client to API through idempotency, payment intents, ledger and outbox; a worker drives the provider-sim and webhook dispatcher to the receiver; a reconciler audits the ledger against the provider; the dashboard reads the v1 API."
+      aria-label="Reckon architecture: client to API through idempotency, payment intents, ledger and outbox; a worker drives the provider-sim and webhook dispatcher to the receiver; a reconciler audits the ledger against the provider; the dashboard reads the v1 API."
       className="h-auto w-full"
     >
       <defs>

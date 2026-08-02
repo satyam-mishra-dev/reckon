@@ -7,7 +7,7 @@ import {
   type IntentEvent,
   type IntentState,
   type IntentStatus,
-} from '@tally/core';
+} from '@reckon/core';
 
 // The idempotency pipeline (brief §4.3, rocket-rides-atomic design).
 //
@@ -15,7 +15,7 @@ import {
 // recovery_point advance commit in ONE transaction — the atomicity of
 // {effects + pointer} IS the pattern. The provider call (foreign state
 // mutation) happens BETWEEN phases, never inside a TX, and carries a derived
-// idempotency key `tally-{keyId}` so our retries dedupe provider-side.
+// idempotency key `reckon-{keyId}` so our retries dedupe provider-side.
 //
 // runIntentPipeline is the single resume loop: the API handler calls it
 // inline, and the phase C background completer will call the same function.
@@ -605,7 +605,7 @@ export async function runIntentPipeline(
           // any takeover that happened while the call was in flight.
           client.release();
           client = null;
-          const result = await chargeProvider(deps, `tally-${keyId}`, outcome.intent);
+          const result = await chargeProvider(deps, `reckon-${keyId}`, outcome.intent);
           client = await deps.pool.connect();
           const key = await loadKey(client, keyId);
           const response = await applyChargeResult(

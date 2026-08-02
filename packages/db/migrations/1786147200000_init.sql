@@ -1,6 +1,6 @@
 -- Up Migration
 
--- Tally core schema (project brief §4.1).
+-- Reckon core schema (project brief §4.1).
 -- Money is ALWAYS bigint minor units (cents). Never floats: binary floating
 -- point cannot represent decimal money exactly and drifts under summation.
 

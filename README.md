@@ -1,6 +1,8 @@
-# Tally
+# Reckon
 
-> Tally is a money-movement engine: idempotent payment intents, orchestration across an unreliable provider, an append-only double-entry ledger, signed webhooks with retries — and a reconciler that continuously proves zero drift, even while the system is being killed mid-flight.
+> A payments engine that proves it can't lose money.
+
+Idempotent payment intents, an append-only double-entry ledger, and a reconciler that holds drift at zero — even while the system is killed mid-flight.
 
 ## Architecture
 
@@ -109,12 +111,12 @@ Configuration is environment variables with working defaults; [.env.example](.en
 
 ## Consuming webhooks
 
-Tally signs every delivery and retries until your endpoint acknowledges. Three rules make consumption safe:
+Reckon signs every delivery and retries until your endpoint acknowledges. Three rules make consumption safe:
 
-**1. Verify the signature against the raw body.** The `Tally-Signature` header is
+**1. Verify the signature against the raw body.** The `Reckon-Signature` header is
 
 ```
-Tally-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")>
+Reckon-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")>
 ```
 
 The timestamp is inside the signed payload, so a captured signature cannot be replayed later with a fresh `t`. Verify with a constant-time compare, never against a re-serialized parse of the JSON:
@@ -135,7 +137,7 @@ function verify(secret: string, header: string, rawBody: string): boolean {
 
 **2. Reject stale timestamps.** Default tolerance is 5 minutes. This bounds the replay window to the tolerance you choose.
 
-**3. Dedupe on the event `id`.** Delivery is at-least-once: a delivery that succeeds after your endpoint processed it but before Tally recorded the 2xx will be sent again. Persist processed event ids and treat a repeat as an acknowledged no-op. The demo receiver in [apps/receiver](apps/receiver/src/app.ts) is the reference implementation of all three rules; the chaos run injects deliberate redeliveries and asserts every one is deduped.
+**3. Dedupe on the event `id`.** Delivery is at-least-once: a delivery that succeeds after your endpoint processed it but before Reckon recorded the 2xx will be sent again. Persist processed event ids and treat a repeat as an acknowledged no-op. The demo receiver in [apps/receiver](apps/receiver/src/app.ts) is the reference implementation of all three rules; the chaos run injects deliberate redeliveries and asserts every one is deduped.
 
 Retry schedule: exponential backoff `1s · 2^n` with jitter, capped, 10 attempts, then the delivery is dead-lettered. Dead deliveries are listed at `GET /v1/deliveries?status=dead` and can be requeued with `POST /v1/deliveries/:id/requeue` (or the button in the dashboard's DLQ view). Respond `2xx` quickly and do the work async; anything else counts as a failed attempt.
 

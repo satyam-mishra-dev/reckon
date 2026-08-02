@@ -9,8 +9,8 @@ import {
   type JobRow,
   type Queryable,
   type RetryOptions,
-} from '@tally/core';
-import { applyTransition, runIntentPipeline, type IntentRow } from '@tally/api/pipeline';
+} from '@reckon/core';
+import { applyTransition, runIntentPipeline, type IntentRow } from '@reckon/api/pipeline';
 import type { WorkerConfig } from './config.js';
 import { runReconciliation } from './reconciler.js';
 
@@ -146,7 +146,7 @@ export async function handleDeliverWebhook(ctx: HandlerContext, job: JobRow): Pr
   try {
     const response = await fetch(delivery.url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'tally-signature': signature },
+      headers: { 'content-type': 'application/json', 'reckon-signature': signature },
       body,
       signal: AbortSignal.timeout(config.webhookTimeoutMs),
     });

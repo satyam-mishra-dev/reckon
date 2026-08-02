@@ -1,9 +1,9 @@
 import Fastify, { type FastifyInstance } from 'fastify';
-import { verifyWebhook, SIGNATURE_HEADER, DEFAULT_TOLERANCE_MS } from '@tally/core';
+import { verifyWebhook, SIGNATURE_HEADER, DEFAULT_TOLERANCE_MS } from '@reckon/core';
 
 // Demo merchant webhook receiver — and the reference consumer implementation
-// for Tally webhooks. The three things every consumer must do:
-//   1. Verify Tally-Signature against the RAW request body (constant-time
+// for Reckon webhooks. The three things every consumer must do:
+//   1. Verify Reckon-Signature against the RAW request body (constant-time
 //      HMAC compare) — never against a re-serialized parse.
 //   2. Reject stale timestamps (default tolerance 5 min) to block replays.
 //   3. Dedupe on the event `id`: delivery is at-least-once, so the same event

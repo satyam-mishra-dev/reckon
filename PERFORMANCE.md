@@ -1,4 +1,4 @@
-# Tally — Performance Notes
+# Reckon — Performance Notes
 
 A measurement-driven optimization pass on the payment-create pipeline and the
 ledger posting path. Every number here comes from a committed script
@@ -24,7 +24,7 @@ concurrency 1–32; flat (within noise) at 64.** A pool-size bump was tried and
     n = 500 each.
   - `replay (finished key)` — same finished key hammered, serves the stored
     response, same ladder.
-  - `ledger post` — `postTransaction` microbench on a dedicated `tally_bench`
+  - `ledger post` — `postTransaction` microbench on a dedicated `reckon_bench`
     DB: 1,000 sequential + 8×250 concurrent.
 - **Environment:** single M-series MacBook Pro. Postgres 16 (alpine) and the API
   run in Docker (compose); the bench driver runs on the host over the published
@@ -32,7 +32,7 @@ concurrency 1–32; flat (within noise) at 64.** A pool-size bump was tried and
   determinism (the bench does this).
 - **Single-machine caveat (important):** during this pass the box was
   **co-resident with two other full Docker stacks** (a separate `fleetline`
-  project, 7 containers, and `frido-*`, 4 containers) plus the tally stack (6
+  project, 7 containers, and `frido-*`, 4 containers) plus the reckon stack (6
   containers). It is CPU-oversubscribed. Consequence: **run-to-run RPS varies
   ±~30%.** A scenario that touches none of the changed code (`replay`) swung
   12.9 → 20.9 → 19.3 ms p50 at c64 across three runs — that is the noise floor.

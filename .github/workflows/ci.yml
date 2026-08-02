@@ -34,7 +34,7 @@ jobs:
   # Quick chaos pass after the main suite: 300 intents with worker SIGKILLs,
   # provider profile flips and webhook redeliveries, asserted by the
   # reconciler. Postgres runs as a service container on host port 5433 (the
-  # port the chaos script expects); the script creates its own tally_chaos
+  # port the chaos script expects); the script creates its own reckon_chaos
   # database there. The full 10k run stays local (`npm run chaos`).
   chaos-quick:
     runs-on: ubuntu-latest
@@ -43,13 +43,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: tally
-          POSTGRES_PASSWORD: tally
-          POSTGRES_DB: tally
+          POSTGRES_USER: reckon
+          POSTGRES_PASSWORD: reckon
+          POSTGRES_DB: reckon
         ports:
           - '5433:5432'
         options: >-
-          --health-cmd "pg_isready -U tally -d tally"
+          --health-cmd "pg_isready -U reckon -d reckon"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10

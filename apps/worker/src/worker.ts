@@ -2,7 +2,7 @@ import { utimes, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Pool } from 'pg';
 import type { Logger } from 'pino';
-import { claimJobs, failJob, heartbeatJobs, sweepExpired, type JobRow } from '@tally/core';
+import { claimJobs, failJob, heartbeatJobs, sweepExpired, type JobRow } from '@reckon/core';
 import type { WorkerConfig } from './config.js';
 import {
   deadLetterOrphanedDeliveries,

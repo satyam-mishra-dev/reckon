@@ -7,17 +7,21 @@
 #   5433  postgres      4800  api           4801  dashboard
 #   4802  provider-sim  4803  receiver
 
+# Project name pins the container prefix to `reckon-*` regardless of the
+# directory the stack is booted from.
+name: reckon
+
 # One image for every app service. Only `migrate` declares `build:` — with the
 # same tag on all six, buildx would race itself building the identical image
 # six times. The rest use the tag it produced (pull_policy: never — this image
 # never lives in a registry).
 x-app: &app
-  image: tally-app
+  image: reckon-app
   pull_policy: never
   restart: unless-stopped
 
 x-db-env: &db-env
-  DATABASE_URL: postgres://tally:tally@postgres:5432/tally
+  DATABASE_URL: postgres://reckon:reckon@postgres:5432/reckon
   PROVIDER_URL: http://provider-sim:4802
 
 services:
@@ -26,14 +30,14 @@ services:
     ports:
       - '5433:5432'
     environment:
-      POSTGRES_USER: tally
-      POSTGRES_PASSWORD: tally
-      POSTGRES_DB: tally
+      POSTGRES_USER: reckon
+      POSTGRES_PASSWORD: reckon
+      POSTGRES_DB: reckon
     volumes:
-      - tally-pgdata:/var/lib/postgresql/data
+      - reckon-pgdata:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U tally -d tally']
+      test: ['CMD-SHELL', 'pg_isready -U reckon -d reckon']
       interval: 5s
       timeout: 3s
       retries: 10
@@ -49,7 +53,7 @@ services:
     environment:
       <<: *db-env
       SEED_WEBHOOK_URL: http://receiver:4803/webhooks
-      SEED_WEBHOOK_SECRET: ${TALLY_WEBHOOK_SECRET:-whsec_demo_compose_only}
+      SEED_WEBHOOK_SECRET: ${RECKON_WEBHOOK_SECRET:-whsec_demo_compose_only}
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,7 +102,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - node -e "process.exit(Date.now()-require('fs').statSync('/tmp/tally-worker-alive').mtimeMs<30000?0:1)"
+        - node -e "process.exit(Date.now()-require('fs').statSync('/tmp/reckon-worker-alive').mtimeMs<30000?0:1)"
       interval: 5s
       timeout: 3s
       retries: 6
@@ -114,7 +118,7 @@ services:
     command: npm run start -w apps/receiver
     environment:
       PORT: '4803'
-      WEBHOOK_SECRET: ${TALLY_WEBHOOK_SECRET:-whsec_demo_compose_only}
+      WEBHOOK_SECRET: ${RECKON_WEBHOOK_SECRET:-whsec_demo_compose_only}
     ports:
       - '4803:4803'
     healthcheck: *http-health
@@ -133,4 +137,4 @@ services:
         condition: service_healthy
 
 volumes:
-  tally-pgdata:
+  reckon-pgdata:

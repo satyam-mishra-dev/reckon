@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { runner } from 'node-pg-migrate';
 import { Client } from 'pg';
-import { enqueueJob } from '@tally/core';
+import { enqueueJob } from '@reckon/core';
 
 // THE KILL TEST (brief §4.10 day 4 gate): SIGKILL a REAL worker process
 // mid-job, prove the job is stuck 'running' with a stale lease, then prove a

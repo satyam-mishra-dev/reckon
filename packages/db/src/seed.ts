@@ -47,7 +47,7 @@ const invokedDirectly =
 
 if (invokedDirectly) {
   const client = new Client({
-    connectionString: process.env.DATABASE_URL ?? 'postgres://tally:tally@localhost:5433/tally',
+    connectionString: process.env.DATABASE_URL ?? 'postgres://reckon:reckon@localhost:5433/reckon',
   });
   await client.connect();
   try {

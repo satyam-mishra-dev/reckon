@@ -1,5 +1,5 @@
 {
-  "name": "@tally/api",
+  "name": "@reckon/api",
   "private": true,
   "type": "module",
   "exports": {
@@ -17,13 +17,13 @@
   "dependencies": {
     "@fastify/swagger": "9.8.1",
     "@fastify/swagger-ui": "6.1.1",
-    "@tally/core": "*",
+    "@reckon/core": "*",
     "fastify": "^5.11.2",
     "pg": "^8.22.0"
   },
   "devDependencies": {
-    "@tally/db": "*",
-    "@tally/provider-sim": "*",
+    "@reckon/db": "*",
+    "@reckon/provider-sim": "*",
     "@testcontainers/postgresql": "^11.14.0",
     "@types/pg": "^8.20.3",
     "node-pg-migrate": "^9.0.0"

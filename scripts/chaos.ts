@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { runner } from 'node-pg-migrate';
 import { Client, Pool } from 'pg';
-import { seed } from '@tally/db';
-import { signWebhook } from '@tally/core';
+import { seed } from '@reckon/db';
+import { signWebhook } from '@reckon/core';
 
 // THE SIGNATURE DEMO (brief §4.9): pump N payment intents at the API while
 //   - SIGKILLing the worker every 5-15s and restarting it,
@@ -23,8 +23,8 @@ import { signWebhook } from '@tally/core';
 //   npm run chaos -- --intents 500        # quick mode while developing
 //   npm run chaos -- --intents 10000 --duration-cap 600
 //
-// Database choice: a DEDICATED database `tally_chaos` on the compose Postgres
-// (host port 5433), created on first run — the dev `tally` database is never
+// Database choice: a DEDICATED database `reckon_chaos` on the compose Postgres
+// (host port 5433), created on first run — the dev `reckon` database is never
 // touched. Domain tables are TRUNCATEd at the start of every run so runs are
 // repeatable. TRUNCATE deliberately bypasses the row-level append-only
 // triggers (they guard UPDATE/DELETE, not TRUNCATE): resetting the test rig
@@ -35,9 +35,9 @@ import { signWebhook } from '@tally/core';
 // restarted or reset mid-run — only the worker is killed.
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
-const ADMIN_URL = 'postgres://tally:tally@localhost:5433/tally';
-const CHAOS_DB = 'tally_chaos';
-const CHAOS_URL = `postgres://tally:tally@localhost:5433/${CHAOS_DB}`;
+const ADMIN_URL = 'postgres://reckon:reckon@localhost:5433/reckon';
+const CHAOS_DB = 'reckon_chaos';
+const CHAOS_URL = `postgres://reckon:reckon@localhost:5433/${CHAOS_DB}`;
 const API_PORT = 4700;
 const PROVIDER_PORT = 4701;
 const RECEIVER_PORT = 4702;
@@ -357,7 +357,7 @@ async function redeliverLoop(pool: Pool): Promise<void> {
       const signature = signWebhook(webhookSecret, body, Math.floor(Date.now() / 1000));
       const res = await fetch(`${RECEIVER_URL}/webhooks`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'tally-signature': signature },
+        headers: { 'content-type': 'application/json', 'reckon-signature': signature },
         body,
         signal: AbortSignal.timeout(5000),
       });
@@ -563,7 +563,7 @@ async function scoreboardAndAssert(pool: Pool, reconcileExit: number): Promise<s
   let succeededWithoutCharge = 0;
   let amountMismatches = 0;
   for (const intent of succeededRows.rows) {
-    const charge = chargeByKey.get(`tally-${intent.key_id}`);
+    const charge = chargeByKey.get(`reckon-${intent.key_id}`);
     if (charge === undefined) succeededWithoutCharge += 1;
     else if (String(charge.amount_minor) !== intent.amount_minor) amountMismatches += 1;
   }

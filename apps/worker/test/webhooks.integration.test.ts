@@ -6,11 +6,11 @@ import type { FastifyInstance } from 'fastify';
 import { runner } from 'node-pg-migrate';
 import { Pool } from 'pg';
 import { pino } from 'pino';
-import { seed } from '@tally/db';
-import { buildProviderSim } from '@tally/provider-sim';
-import { buildReceiver, type ReceivedEvent, type ReceiverOptions } from '@tally/receiver';
-import { buildApp } from '@tally/api/app';
-import { enqueueJob } from '@tally/core';
+import { seed } from '@reckon/db';
+import { buildProviderSim } from '@reckon/provider-sim';
+import { buildReceiver, type ReceivedEvent, type ReceiverOptions } from '@reckon/receiver';
+import { buildApp } from '@reckon/api/app';
+import { enqueueJob } from '@reckon/core';
 import type { WorkerConfig } from '../src/config.js';
 import { startWorker, type RunningWorker } from '../src/worker.js';
 
@@ -52,7 +52,7 @@ const testWorkerConfig = (databaseUrl: string): WorkerConfig => ({
   completerGraceMs: 600_000,
   completerMaxAttempts: 25,
   idempotencyLockTimeoutMs: 90_000,
-  livenessFile: '/tmp/tally-test-webhooks-alive',
+  livenessFile: '/tmp/reckon-test-webhooks-alive',
   webhookTimeoutMs: 2000,
   maxAttempts: MAX_ATTEMPTS,
   backoffBaseMs: 50,

@@ -1,5 +1,5 @@
 {
-  "name": "@tally/provider-sim",
+  "name": "@reckon/provider-sim",
   "private": true,
   "type": "module",
   "exports": {

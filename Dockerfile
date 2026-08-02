@@ -1,4 +1,4 @@
-# One shared image for every Tally service (api, worker, provider-sim,
+# One shared image for every Reckon service (api, worker, provider-sim,
 # receiver, dashboard, migrate) — compose picks the command. Multi-stage so the
 # npm ci layer is cached independently of source edits.
 #

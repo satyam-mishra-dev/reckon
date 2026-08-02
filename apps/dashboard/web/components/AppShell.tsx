@@ -41,7 +41,7 @@ export function AppShell(): ReactNode {
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-2.5">
           <NavLink to="/" className="flex items-center gap-2 text-ink">
             <BrandMark />
-            <span className="font-serif text-[17px] font-semibold tracking-tight">Tally</span>
+            <span className="font-serif text-[17px] font-semibold tracking-tight">Reckon</span>
           </NavLink>
           <nav className="ml-2 flex items-center gap-0.5" aria-label="Primary">
             {NAV.map((item) => (
@@ -81,7 +81,7 @@ export function AppShell(): ReactNode {
 
       <footer className="border-t border-rule">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 font-mono text-[11px] text-ink-45">
-          <span>Tally · a money-movement engine · live data from the running stack</span>
+          <span>Reckon · a money-movement engine · live data from the running stack</span>
           {SHA ? (
             <a className="link" href={`${REPO}commit/${SHA}`} target="_blank" rel="noreferrer">
               build {SHA.slice(0, 7)}

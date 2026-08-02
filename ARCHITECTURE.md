@@ -34,7 +34,7 @@ phases**. Each phase commits its effects and the advance of
 started
   └─ phase: insert intent + outbox event ..................... intent_created
        └─ provider POST /charges (between phases, never in a TX,
-          with derived key `tally-{keyId}`) .................. provider_charged
+          with derived key `reckon-{keyId}`) .................. provider_charged
             └─ phase: post charge + fee to the ledger ........ ledger_posted
                  └─ phase: succeed intent + store response .... finished
 ```

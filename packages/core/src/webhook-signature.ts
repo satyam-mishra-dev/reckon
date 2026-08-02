@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 // Stripe-style webhook signing (brief §4.7).
 //
-// Header:   Tally-Signature: t=<unix seconds>,v1=<hex hmac_sha256(secret, "<t>.<body>")>
+// Header:   Reckon-Signature: t=<unix seconds>,v1=<hex hmac_sha256(secret, "<t>.<body>")>
 // The timestamp is INSIDE the signed payload, so an attacker cannot take a
 // captured (body, signature) pair and replay it later with a fresh t —
 // changing t invalidates v1. Consumers must therefore verify BOTH:
@@ -11,7 +11,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 // Delivery is at-least-once: verify, then dedupe on the event `id` field.
 // apps/receiver is the reference consumer implementation.
 
-export const SIGNATURE_HEADER = 'tally-signature';
+export const SIGNATURE_HEADER = 'reckon-signature';
 export const DEFAULT_TOLERANCE_MS = 5 * 60 * 1000;
 
 export function signWebhook(secret: string, body: string, timestampSec: number): string {

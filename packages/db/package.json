@@ -1,5 +1,5 @@
 {
-  "name": "@tally/db",
+  "name": "@reckon/db",
   "private": true,
   "type": "module",
   "exports": {
@@ -9,11 +9,11 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "migrate": "DATABASE_URL=${DATABASE_URL:-postgres://tally:tally@localhost:5433/tally} node-pg-migrate up -m migrations",
+    "migrate": "DATABASE_URL=${DATABASE_URL:-postgres://reckon:reckon@localhost:5433/reckon} node-pg-migrate up -m migrations",
     "seed": "tsx src/seed.ts"
   },
   "devDependencies": {
-    "@tally/core": "*",
+    "@reckon/core": "*",
     "@testcontainers/postgresql": "^11.14.0",
     "@types/pg": "^8.20.3"
   },

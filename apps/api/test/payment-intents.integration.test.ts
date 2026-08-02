@@ -6,8 +6,8 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import type { FastifyInstance } from 'fastify';
 import { runner } from 'node-pg-migrate';
 import { Pool } from 'pg';
-import { seed } from '@tally/db';
-import { buildProviderSim, type SimCharge, type SimConfig } from '@tally/provider-sim';
+import { seed } from '@reckon/db';
+import { buildProviderSim, type SimCharge, type SimConfig } from '@reckon/provider-sim';
 import { buildApp } from '../src/app.js';
 import type { ApiConfig } from '../src/config.js';
 import { runIntentPipeline } from '../src/pipeline.js';

@@ -1,4 +1,4 @@
-// Interactive OpenAPI 3.1 docs for the Tally payments API.
+// Interactive OpenAPI 3.1 docs for the Reckon payments API.
 //
 // The spec is GENERATED from the Fastify route schemas already declared in
 // app.ts / read-models.ts (via @fastify/swagger's onRoute hook) — there is no
@@ -46,7 +46,7 @@ interface JsonSchema {
 }
 
 const API_DESCRIPTION = `
-Tally is a money-movement engine: idempotent payment intents, orchestration
+Reckon is a money-movement engine: idempotent payment intents, orchestration
 across an unreliable card provider, an append-only double-entry ledger, and
 signed webhooks with retries and a dead-letter queue.
 
@@ -76,7 +76,7 @@ Internally the key advances through **recovery points**
 provider timeout leaves the key at its last durable point; retrying with the
 **same key** resumes from exactly there — it never restarts the payment. If the
 provider charges the card and then times out, you get \`503\` with
-\`status: "requires_retry"\`; retry the same key and Tally re-calls the provider
+\`status: "requires_retry"\`; retry the same key and Reckon re-calls the provider
 with the same derived key, so the provider dedupes and the card is charged once.
 
 **Rule of thumb:** on any \`409\`, \`503\`, or network error, retry with the
@@ -93,7 +93,7 @@ is \`USD\` (the only seeded currency).
 - **Maximum** is **9007199254740991** (2^53−1): above it a JSON-number amount
   would silently lose precision on the wire.
 - Out-of-range, non-integer, or non-numeric amounts are rejected with \`400\`.
-- Tally's **fee** on a successful charge is **2.9% + 30** minor units, posted to
+- Reckon's **fee** on a successful charge is **2.9% + 30** minor units, posted to
   the ledger as a separate \`fee\` transaction alongside the \`charge\`. Money
   fields in read models are returned as **strings** so 64-bit values survive
   JSON exactly.
@@ -101,13 +101,13 @@ is \`USD\` (the only seeded currency).
 ## Webhooks
 
 Register an endpoint with \`POST /v1/webhook_endpoints\`; the signing secret
-(\`whsec_…\`) is returned **once**, at registration. Tally then POSTs signed
+(\`whsec_…\`) is returned **once**, at registration. Reckon then POSTs signed
 JSON events (e.g. \`payment_intent.succeeded\`) to your URL.
 
-**Signature.** Every delivery carries a \`Tally-Signature\` header:
+**Signature.** Every delivery carries a \`Reckon-Signature\` header:
 
 \`\`\`
-Tally-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")>
+Reckon-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<raw body>")>
 \`\`\`
 
 The **string-to-sign is \`"<t>.<raw body>"\`** — the timestamp, a literal \`.\`,
@@ -133,7 +133,7 @@ function verify(secret: string, header: string, rawBody: string): boolean {
 string, a captured signature cannot be replayed later with a fresh timestamp.
 
 **At-least-once + dedupe.** Delivery is **at-least-once**: a delivery that your
-endpoint processes just before Tally records your \`2xx\` will be re-sent.
+endpoint processes just before Reckon records your \`2xx\` will be re-sent.
 **Dedupe on the event \`id\`** — persist processed ids and treat a repeat as an
 acknowledged no-op. Respond \`2xx\` quickly and do work async; anything else
 counts as a failed attempt.
@@ -366,7 +366,7 @@ const OPERATIONS: Record<string, Record<string, OperationDoc>> = {
       summary: 'Register a webhook endpoint',
       description:
         'Registers a URL to receive signed events. The signing secret (`whsec_…`) is returned ' +
-        '**once, here** — store it; it is used to verify the `Tally-Signature` on every delivery.',
+        '**once, here** — store it; it is used to verify the `Reckon-Signature` on every delivery.',
       responses: {
         '201': {
           description: 'The endpoint id, its URL, and the one-time signing secret.',
@@ -526,7 +526,7 @@ export function registerDocs(app: FastifyInstance): void {
     openapi: {
       openapi: '3.1.0',
       info: {
-        title: 'Tally Payments API',
+        title: 'Reckon Payments API',
         version: '1.0.0',
         description: API_DESCRIPTION,
       },
@@ -548,7 +548,7 @@ export function registerDocs(app: FastifyInstance): void {
     transformObject: (documentObject) => {
       // We only run in OpenAPI mode, so the union always carries openapiObject.
       if (!('openapiObject' in documentObject)) {
-        throw new Error('Tally docs expect OpenAPI (3.1) mode');
+        throw new Error('Reckon docs expect OpenAPI (3.1) mode');
       }
       const openapiObject = documentObject.openapiObject;
       const paths = openapiObject.paths;

@@ -16,7 +16,7 @@ recovery point stays at `intent_created`. Nothing is assumed either way.
 
 **How it recovers.** Three converging paths, all through the same resume loop:
 a client retry with the same key re-calls the provider with the same derived
-key `tally-{keyId}` and gets the original outcome replayed; the completer does
+key `reckon-{keyId}` and gets the original outcome replayed; the completer does
 the same for abandoned keys after a grace period; and the reconciler's
 external pass finds the charge in `/truth`, takes the key lock, and drives the
 key to `finished` (posting the ledger from truth if the provider is still

@@ -3,7 +3,7 @@ import { loadWorkerConfig } from './config.js';
 import { startWorker } from './worker.js';
 
 const config = loadWorkerConfig();
-const log = pino({ name: 'tally-worker', level: config.logLevel });
+const log = pino({ name: 'reckon-worker', level: config.logLevel });
 const worker = startWorker(config, log);
 
 let shuttingDown = false;

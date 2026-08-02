@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type { Logger } from 'pino';
-import { applyTransition, runIntentPipeline, type IntentRow } from '@tally/api/pipeline';
+import { applyTransition, runIntentPipeline, type IntentRow } from '@reckon/api/pipeline';
 
 // The reconciler (brief §4.8). postTransaction enforces the balance invariant
 // at write time; this module RE-VERIFIES it from cold data — the function
@@ -13,7 +13,7 @@ import { applyTransition, runIntentPipeline, type IntentRow } from '@tally/api/p
 // impossible — verified anyway, that is the point of an auditor).
 //
 // External pass: diff provider GET /truth against our records by derived
-// idempotency key (`tally-{keyId}`). A charge whose key is not finished is the
+// idempotency key (`reckon-{keyId}`). A charge whose key is not finished is the
 // timeout-after-charge case: RESOLVE it by re-driving the stuck key through
 // the exact same runIntentPipeline the API and completer use (the provider
 // replays the original outcome for the derived key). If the provider is
@@ -27,7 +27,7 @@ import { applyTransition, runIntentPipeline, type IntentRow } from '@tally/api/p
 
 const MAX_SAMPLES = 20; // per violation category, kept in the report's details jsonb
 const UUID_RE = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
-const DERIVED_KEY_PREFIX = 'tally-';
+const DERIVED_KEY_PREFIX = 'reckon-';
 
 export interface ReconcilerOptions {
   /** null → internal pass only (no provider to audit against). */

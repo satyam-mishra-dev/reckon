@@ -1,6 +1,6 @@
 // All environment reads for the API live here — one place, sane defaults.
 
-import { numEnv } from '@tally/core';
+import { numEnv } from '@reckon/core';
 
 export interface ApiConfig {
   port: number;
@@ -15,7 +15,7 @@ export interface ApiConfig {
   enableProviderConfig: boolean;
 }
 
-const DEFAULT_DATABASE_URL = 'postgres://tally:tally@localhost:5433/tally';
+const DEFAULT_DATABASE_URL = 'postgres://reckon:reckon@localhost:5433/reckon';
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   if (env.DATABASE_URL === undefined || env.DATABASE_URL === '') {

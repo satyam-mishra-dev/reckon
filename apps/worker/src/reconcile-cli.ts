@@ -16,7 +16,7 @@ const { values } = parseArgs({
 });
 
 const config = loadWorkerConfig();
-const log = pino({ name: 'tally-reconcile', level: config.logLevel });
+const log = pino({ name: 'reckon-reconcile', level: config.logLevel });
 // Explicitly-empty PROVIDER_URL skips the external pass (e.g. auditing a DB
 // snapshot with no provider running); an unreachable provider is a hard error.
 const providerUrl = process.env.PROVIDER_URL === '' ? null : config.providerUrl;

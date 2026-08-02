@@ -22,7 +22,7 @@ import {
 } from '../components/ui';
 
 const RECOVERY = ['started', 'intent_created', 'provider_charged', 'ledger_posted', 'finished'] as const;
-const SEEN_KEY = 'tally.play.seen';
+const SEEN_KEY = 'reckon.play.seen';
 
 function newKey(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -314,7 +314,7 @@ function ChaosSlider({
 
 // ------------------------------------------------------------ Main
 export function Playground(): ReactNode {
-  useDocumentTitle('Playground — Tally');
+  useDocumentTitle('Playground — Reckon');
   const reduced = usePrefersReducedMotion();
 
   const [amount, setAmount] = useState('49.99');

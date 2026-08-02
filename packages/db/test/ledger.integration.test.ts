@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { runner } from 'node-pg-migrate';
 import { Client } from 'pg';
-import { postTransaction, reduceBalances, type EntryInput } from '@tally/core';
+import { postTransaction, reduceBalances, type EntryInput } from '@reckon/core';
 import { seed, PLATFORM_ACCOUNT_TYPES } from '../src/seed.js';
 
 // Real Postgres via Testcontainers — no mocked infrastructure.

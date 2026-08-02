@@ -12,7 +12,7 @@ import {
   heartbeatJobs,
   sweepExpired,
   type JobRow,
-} from '@tally/core';
+} from '@reckon/core';
 
 // The hand-rolled queue against real Postgres — claim atomicity, retry
 // scheduling, lease heartbeat, and the visibility-timeout sweeper.

@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Pool } from 'pg';
-import { enqueueJob } from '@tally/core';
+import { enqueueJob } from '@reckon/core';
 import type { ApiConfig } from './config.js';
 import { incCounter, observe, renderMetrics } from './metrics.js';
 import { runIntentPipeline, type FaultHook, type RecoveryPoint } from './pipeline.js';

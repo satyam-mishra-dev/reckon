@@ -1,5 +1,5 @@
 import { hostname } from 'node:os';
-import { numEnv } from '@tally/core';
+import { numEnv } from '@reckon/core';
 
 // All environment reads for the worker live here — one place, sane defaults.
 //
@@ -55,10 +55,10 @@ export interface WorkerConfig {
 
 export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerConfig {
   if (env.DATABASE_URL === undefined || env.DATABASE_URL === '') {
-    console.warn('DATABASE_URL not set — defaulting to postgres://tally:tally@localhost:5433/tally');
+    console.warn('DATABASE_URL not set — defaulting to postgres://reckon:reckon@localhost:5433/reckon');
   }
   return {
-    databaseUrl: env.DATABASE_URL ?? 'postgres://tally:tally@localhost:5433/tally',
+    databaseUrl: env.DATABASE_URL ?? 'postgres://reckon:reckon@localhost:5433/reckon',
     providerUrl: env.PROVIDER_URL ?? 'http://localhost:4802',
     providerTimeoutMs: numEnv(env, 'PROVIDER_TIMEOUT_MS', 5000),
     workerId: env.WORKER_ID ?? `${hostname()}-${process.pid}`,
@@ -75,7 +75,7 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     completerGraceMs: numEnv(env, 'COMPLETER_GRACE_MS', 30_000),
     completerMaxAttempts: numEnv(env, 'COMPLETER_MAX_ATTEMPTS', 25),
     idempotencyLockTimeoutMs: numEnv(env, 'IDEMPOTENCY_LOCK_TIMEOUT_MS', 90_000),
-    livenessFile: env.WORKER_LIVENESS_FILE ?? '/tmp/tally-worker-alive',
+    livenessFile: env.WORKER_LIVENESS_FILE ?? '/tmp/reckon-worker-alive',
     webhookTimeoutMs: numEnv(env, 'WEBHOOK_TIMEOUT_MS', 5000),
     maxAttempts: numEnv(env, 'MAX_ATTEMPTS', 10),
     backoffBaseMs: numEnv(env, 'BACKOFF_BASE_MS', 1000),

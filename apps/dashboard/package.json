@@ -1,5 +1,5 @@
 {
-  "name": "@tally/dashboard",
+  "name": "@reckon/dashboard",
   "private": true,
   "type": "module",
   "scripts": {

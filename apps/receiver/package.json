@@ -1,5 +1,5 @@
 {
-  "name": "@tally/receiver",
+  "name": "@reckon/receiver",
   "private": true,
   "type": "module",
   "exports": {
@@ -12,7 +12,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@tally/core": "*",
+    "@reckon/core": "*",
     "fastify": "^5.11.2"
   }
 }

@@ -1,4 +1,4 @@
-// Typed client for the real Tally API, reached through the dashboard's
+// Typed client for the real Reckon API, reached through the dashboard's
 // same-origin /api/* proxy (src/index.ts forwards to the API on :4800). The raw
 // response text is always returned too — the playground proves byte-identity of
 // duplicate responses by comparing those bytes, never a re-serialized object.

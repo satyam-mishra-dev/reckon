@@ -46,7 +46,7 @@ function StatTile({
 }
 
 export function Home(): ReactNode {
-  useDocumentTitle('Tally — the ledger you can watch balance');
+  useDocumentTitle('Reckon — the ledger you can watch balance');
   const { data, loading, refresh } = usePoll<StatsResponse>(() => apiGet('/v1/stats'), 5000);
   const [running, setRunning] = useState(false);
 
@@ -82,7 +82,7 @@ export function Home(): ReactNode {
         <PageTitle>A payments engine that proves it can&rsquo;t lose money.</PageTitle>
         {/* TODO(voice): replace with the author's one-paragraph pitch. Kept factual + neutral. */}
         <p className="max-w-2xl text-[15px] leading-relaxed text-ink-60">
-          Tally runs idempotent payment intents across a deliberately unreliable card provider,
+          Reckon runs idempotent payment intents across a deliberately unreliable card provider,
           records every movement in an append-only double-entry ledger, and delivers signed
           webhooks with retries and a dead-letter queue. A reconciler audits the ledger against
           the provider continuously. Every figure on this page is read live from the running

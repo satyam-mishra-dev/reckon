@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { runner } from 'node-pg-migrate';
 import { Client } from 'pg';
-import { postTransaction, ulid } from '@tally/core';
-import { seed } from '@tally/db';
+import { postTransaction, ulid } from '@reckon/core';
+import { seed } from '@reckon/db';
 
 // Load driver for the booted compose stack (no k6 — see DECISIONS.md: a
 // ~250-line TS driver reuses the repo's toolchain and emits exactly the JSON
@@ -19,7 +19,7 @@ import { seed } from '@tally/db';
 //   b) replay: idempotent replays of one finished key, same ladder — the
 //      payoff: replays skip the pipeline and serve the stored response
 //   c) ledger: postTransaction microbench on a dedicated database
-//      (tally_bench), 1000 sequential + 8×250 concurrent
+//      (reckon_bench), 1000 sequential + 8×250 concurrent
 //
 // Results: pretty table on stdout + machine-readable bench-results.json.
 
@@ -29,13 +29,13 @@ const { values: args } = parseArgs({
   options: {
     api: { type: 'string', default: 'http://localhost:4800' },
     n: { type: 'string', default: '500' },
-    'admin-url': { type: 'string', default: 'postgres://tally:tally@localhost:5433/tally' },
+    'admin-url': { type: 'string', default: 'postgres://reckon:reckon@localhost:5433/reckon' },
   },
 });
 const API_URL = args.api;
 const N = Number(args.n);
 const ADMIN_URL = args['admin-url'];
-const BENCH_DB = 'tally_bench';
+const BENCH_DB = 'reckon_bench';
 const BENCH_URL = ADMIN_URL.replace(/\/[^/]+$/, `/${BENCH_DB}`);
 const LADDER = [1, 8, 32, 64];
 const RUN_ID = Date.now().toString(36);

@@ -6,9 +6,9 @@ import type { FastifyInstance } from 'fastify';
 import { runner } from 'node-pg-migrate';
 import { Pool } from 'pg';
 import { pino } from 'pino';
-import { seed } from '@tally/db';
-import { buildProviderSim, type SimCharge } from '@tally/provider-sim';
-import { buildApp } from '@tally/api/app';
+import { seed } from '@reckon/db';
+import { buildProviderSim, type SimCharge } from '@reckon/provider-sim';
+import { buildApp } from '@reckon/api/app';
 import type { WorkerConfig } from '../src/config.js';
 import { startWorker, type RunningWorker } from '../src/worker.js';
 
@@ -44,7 +44,7 @@ const testWorkerConfig = (databaseUrl: string): WorkerConfig => ({
   completerGraceMs: 100,
   completerMaxAttempts: 25,
   idempotencyLockTimeoutMs: 90_000,
-  livenessFile: '/tmp/tally-test-completer-alive',
+  livenessFile: '/tmp/reckon-test-completer-alive',
   webhookTimeoutMs: 2000,
   maxAttempts: 10,
   backoffBaseMs: 50,

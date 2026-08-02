@@ -7,7 +7,7 @@ Non-obvious choices, what was rejected, and why. Three to five lines each.
 The brief suggested pnpm; I used npm workspaces. One fewer tool to install,
 `npm ci` works everywhere Docker and CI already have Node, and at six small
 packages the performance difference is noise. Workspace protocol (`"*"`) links
-`@tally/core` and friends without a publish step. Rejected: pnpm (no gain at
+`@reckon/core` and friends without a publish step. Rejected: pnpm (no gain at
 this scale), a polyrepo (the packages share one schema and one lifecycle).
 
 ## node-pg-migrate for migrations
@@ -90,7 +90,7 @@ cannot disagree with the ledger (TigerBeetle's framing). The cost is a scan at
 read time, which the demo scale never notices. If it ever mattered:
 materialize with a refresh, still never hand-written.
 
-## Derived provider idempotency key (`tally-{keyId}`)
+## Derived provider idempotency key (`reckon-{keyId}`)
 
 The provider key is computed from our idempotency-key row id, not stored. Any
 retry of the same key derives the same provider key, so provider-side dedupe
@@ -159,5 +159,5 @@ dependency to avoid ~30 lines of fetch).
 concurrency ladder, percentiles, JSON + table output. k6 was rejected because
 it adds a Go binary and a second JavaScript dialect (goja, no Node APIs) to
 produce the same four percentiles — and the ledger microbench needs `pg` and
-`@tally/core` imports, which k6 cannot do. If this ever needs distributed
+`@reckon/core` imports, which k6 cannot do. If this ever needs distributed
 load or fancier scenarios, k6 is the upgrade path.

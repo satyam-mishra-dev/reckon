@@ -323,7 +323,7 @@ function TransactionsPanel(): ReactNode {
 }
 
 export function Ledger(): ReactNode {
-  useDocumentTitle('Ledger — Tally');
+  useDocumentTitle('Ledger — Reckon');
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">

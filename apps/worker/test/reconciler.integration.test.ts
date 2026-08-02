@@ -5,9 +5,9 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { runner } from 'node-pg-migrate';
 import { Pool } from 'pg';
 import { pino } from 'pino';
-import { seed } from '@tally/db';
-import { buildProviderSim, type SimCharge } from '@tally/provider-sim';
-import { buildApp } from '@tally/api/app';
+import { seed } from '@reckon/db';
+import { buildProviderSim, type SimCharge } from '@reckon/provider-sim';
+import { buildApp } from '@reckon/api/app';
 import { reportFailures, runReconciliation, type ReconcilerOptions } from '../src/reconciler.js';
 
 // The reconciler (brief §4.8, day 6 gate): a clean ledger reports zero drift;
