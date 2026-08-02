@@ -73,6 +73,8 @@ docker compose up -d --wait     # postgres, migrate+seed, api, worker, provider-
 open http://localhost:4801/playground.html
 ```
 
+Interactive API docs (OpenAPI 3.1, served fully offline) at http://localhost:4800/docs — raw spec at http://localhost:4800/openapi.json.
+
 The playground fires real payments. "Double-submit ×5" sends five concurrent identical requests so you can watch idempotency produce five byte-identical responses and a single provider charge. The provider chaos panel flips the simulated card provider into declines or timeouts-after-charge; the intent feed shows failures, retries and recovery live. That panel drives an unauthenticated provider-config passthrough, so it is a **demo-only control gated behind `ENABLE_PROVIDER_CONFIG=1`** (set in compose; off everywhere else — see DECISIONS.md).
 
 Host ports: `4800` api · `4801` dashboard · `4802` provider-sim · `4803` receiver · `5433` postgres.
