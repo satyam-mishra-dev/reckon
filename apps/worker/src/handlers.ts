@@ -199,8 +199,8 @@ export async function handleDeliverWebhook(ctx: HandlerContext, job: JobRow): Pr
 }
 
 /**
- * Self-heal deliveries stranded 'pending' by a sweep-dead-lettered job (audit
- * C3): when the sweeper moves a deliver_webhook job to 'dead' (visibility
+ * Self-heal deliveries stranded 'pending' by a sweep-dead-lettered job:
+ * when the sweeper moves a deliver_webhook job to 'dead' (visibility
  * timeout exhausted), handleDeliverWebhook never runs again to mirror the dead
  * state onto the delivery row, so it would sit 'pending' forever with no live
  * job and requeue (dead-only) can't reach it. Mark those deliveries dead so the
@@ -246,7 +246,7 @@ export async function handleCompleteIntent(ctx: HandlerContext, job: JobRow): Pr
 
   // Take the key lock iff free or stale — the same takeover rule as the API,
   // so the completer never races a live request on the same key. Stamp our
-  // owner token (audit C1/C2) and read the backstop counter in one round trip.
+  // owner token and read the backstop counter in one round trip.
   const owner = randomUUID();
   const locked = await pool.query<{ id: string; completer_attempts: number }>(
     `UPDATE idempotency_keys SET locked_at = now(), locked_by = $3
@@ -262,7 +262,7 @@ export async function handleCompleteIntent(ctx: HandlerContext, job: JobRow): Pr
     return;
   }
 
-  // Poisoned-key backstop (audit C5/O1): a key that keeps failing to complete
+  // Poisoned-key backstop: a key that keeps failing to complete
   // would re-enqueue a job every grace period forever + re-emit transition
   // events each cycle. Past the cap, drive it to a terminal failed state with a
   // stored response so the client gets a stable answer and the loop stops.
@@ -407,7 +407,7 @@ export async function enqueueStuckKeys(db: Queryable, config: WorkerConfig): Pro
 }
 
 // ---------------------------------------------------------------------------
-// reconcile (brief §4.8) — the cron-style pass. runReconciliation persists its
+// reconcile — the cron-style pass. runReconciliation persists its
 // own report row; an unexpected throw (e.g. provider /truth unreachable)
 // propagates to the poll loop's crash-bar, which schedules a retry.
 // ---------------------------------------------------------------------------

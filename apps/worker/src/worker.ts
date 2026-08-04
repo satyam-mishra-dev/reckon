@@ -19,7 +19,7 @@ import {
 // The worker process: one claim/execute poll loop plus three periodic loops
 // (lease heartbeat, expired-lease sweeper, outbox fan-out + completer
 // enqueuer). Claiming is one short statement; work happens outside any TX;
-// liveness while working is the locked_at heartbeat (notes §2/§3).
+// liveness while working is the locked_at heartbeat.
 
 export interface RunningWorker {
   /** Graceful stop: no new claims, in-flight jobs finish, then loops + pool shut down. */
@@ -37,7 +37,7 @@ export function startWorker(config: WorkerConfig, log: Logger): RunningWorker {
     keepAlive: true,
   });
   // A single idle-client error (PG restart/failover) would otherwise crash the
-  // process via an unhandled 'error' event (audit C4/O2). Log; the pool
+  // process via an unhandled 'error' event. Log; the pool
   // reconnects on next use.
   pool.on('error', (err) => log.error({ err }, 'postgres pool idle client error'));
   const ctx: HandlerContext = { pool, config, log };
@@ -50,7 +50,7 @@ export function startWorker(config: WorkerConfig, log: Logger): RunningWorker {
   if (config.testJobs) handlers.set('test_sleep', handleTestSleep);
   const kinds = [...handlers.keys()];
 
-  // Liveness file for the compose healthcheck (audit O2): the worker has no HTTP
+  // Liveness file for the compose healthcheck: the worker has no HTTP
   // port, so it touches this file every poll and the healthcheck asserts a
   // recent mtime — a black-holed PG connection that wedges the poll loop stops
   // the touches and compose restarts the container.
@@ -176,11 +176,11 @@ export function startWorker(config: WorkerConfig, log: Logger): RunningWorker {
       });
       if (swept.length > 0) log.warn({ swept }, 'swept expired job leases');
       // A deliver_webhook job the sweeper just dead-lettered leaves its mirrored
-      // delivery stranded 'pending' (audit C3) — reconcile those to 'dead'.
+      // delivery stranded 'pending' — reconcile those to 'dead'.
       const healed = await deadLetterOrphanedDeliveries(pool);
       if (healed > 0) log.warn({ healed }, 'dead-lettered deliveries stranded by dead jobs');
       // A pending job of a kind no worker registers would sit forever and stall
-      // the drain (audit O5) — the claim filter never returns it, so the
+      // the drain — the claim filter never returns it, so the
       // unknown-handler branch is unreachable. Dead-letter them here.
       const orphaned = await pool.query<{ id: string; kind: string }>(
         `UPDATE jobs SET status = 'dead', locked_at = NULL

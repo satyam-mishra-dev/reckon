@@ -9,7 +9,7 @@ import {
   type IntentStatus,
 } from '@reckon/core';
 
-// The idempotency pipeline (brief §4.3, rocket-rides-atomic design).
+// The idempotency pipeline (rocket-rides-atomic design).
 //
 // The request is split into ATOMIC PHASES: each phase's local writes and the
 // recovery_point advance commit in ONE transaction — the atomicity of
@@ -51,7 +51,7 @@ export interface PipelineResponse {
  * over this key's stale lock (locked_by no longer matches) or advanced the
  * recovery_point past what we expected. The resume loop catches it, re-reads
  * the key, and replays the finished response or answers 409 — it never proceeds
- * to double-post or regress the pointer (audit C1/C2, the fencing invariant).
+ * to double-post or regress the pointer (the fencing invariant).
  */
 class OwnershipLostError extends Error {
   constructor() {
@@ -111,7 +111,7 @@ async function inTx<T>(client: PoolClient, fn: () => Promise<T>): Promise<T> {
   } catch (err) {
     // Guard the ROLLBACK: on a dead connection it throws, and an unguarded
     // throw here would REPLACE the original error — corrupting the
-    // retryable-SQLSTATE check in runIntentPipeline (audit C7). Preserve `err`.
+    // retryable-SQLSTATE check in runIntentPipeline. Preserve `err`.
     await client.query('ROLLBACK').catch(() => undefined);
     throw err;
   }
@@ -223,7 +223,7 @@ async function chargeProvider(
 // ---------------------------------------------------------------------------
 // Atomic phases. Each commits {its writes + recovery_point advance} in one TX.
 //
-// FENCING (audit C1/C2): every phase's pointer/lock UPDATE is guarded by
+// FENCING: every phase's pointer/lock UPDATE is guarded by
 // `AND locked_by = <owner> AND recovery_point = <expected>` (create phase also
 // `AND intent_id IS NULL`). The guard is the LAST statement in the phase TX, so
 // if it affects 0 rows — another actor stole the stale lock or advanced the
@@ -345,7 +345,7 @@ async function phaseProviderTimeout(
 // Chart of accounts is immutable seed data (INSERT-only, never updated/deleted),
 // so the per-currency {type -> account_id} map is resolved once per process and
 // reused — cutting one SELECT off every payment's ledger phase.
-// ponytail: process-local cache of immutable seed rows; a new currency's
+// NOTE: process-local cache of immutable seed rows; a new currency's
 // accounts are fetched lazily on first use. Restart on chart-of-accounts change.
 const accountsByCurrency = new Map<string, Map<string, string>>();
 
@@ -459,7 +459,7 @@ async function phaseFinish(client: PoolClient, key: KeyRow, owner: string): Prom
 /**
  * One step of the resume loop. The provider call is the only non-DB effect and
  * needs no client — so 'intent_created' returns `{ kind: 'charge' }` and
- * runIntentPipeline releases the pooled client across the call (audit O6).
+ * runIntentPipeline releases the pooled client across the call.
  * Everything else runs a phase and returns `{ kind: 'advance' }`, or the stored
  * response at `finished`.
  */
@@ -575,7 +575,7 @@ async function ownershipLostResponse(client: PoolClient, keyId: string): Promise
 
 /**
  * The single reusable resume loop: switches on recovery_point and executes only
- * the remaining phases. `owner` is the caller's lock token (audit C1/C2): every
+ * the remaining phases. `owner` is the caller's lock token: every
  * phase advance is fenced by it, and a guarded 0-row update aborts cleanly via
  * OwnershipLostError -> replay-or-409 instead of double-posting. Caller must
  * hold the key's lock (locked_at + locked_by = owner).
@@ -597,7 +597,7 @@ export async function runIntentPipeline(
         if (outcome.kind === 'response') return outcome.response;
         if (outcome.kind === 'charge') {
           // Release the pooled client across the up-to-timeout provider call —
-          // holding it is the capacity cliff of audit O6. State is re-derived
+          // holding it is the capacity cliff. State is re-derived
           // from the DB on re-checkout, and the phase owner+CAS guard catches
           // any takeover that happened while the call was in flight.
           client.release();

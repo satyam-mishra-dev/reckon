@@ -4,7 +4,7 @@ import { usePoll, useTick } from '../lib/hooks';
 import { agoLabel, majorAmount } from '../lib/format';
 import { InfoPopover, Skeleton } from './ui';
 
-// Signature element (§2.3): a persistent beam under the header. Left pan = total
+// Signature element: a persistent beam under the header. Left pan = total
 // debit balances, right pan = total credit balances; they are equal iff the
 // ledger sums to zero (the invariant). Center is the live Σ readout. On every
 // data change the beam plays a short weigh-and-settle — and settles level,

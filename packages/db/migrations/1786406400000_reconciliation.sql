@@ -1,6 +1,6 @@
 -- Up Migration
 
--- Phase D: the reconciler (brief §4.8) persists one row per pass — drift or
+-- Phase D: the reconciler persists one row per pass — drift or
 -- not — so "zero drift" is a queryable record, not a log line. drift_minor is
 -- the sum of |debits - credits| across ledger transactions (0 on a healthy
 -- ledger); the orphan columns track the external pass against provider /truth.

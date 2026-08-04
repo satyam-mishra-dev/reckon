@@ -46,7 +46,7 @@ describe('validateEntries', () => {
   });
 
   it('accepts a balanced multi-entry set', () => {
-    // The canonical charge posting from the brief: amount + fee split.
+    // The canonical charge posting: amount + fee split.
     expect(() =>
       validateEntries([
         entry('customer_receivable', 'debit', 1000n),

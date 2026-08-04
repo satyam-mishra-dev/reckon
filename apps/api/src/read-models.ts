@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 
-// Read models for the dashboard (brief §4.10 day 8). Plain SQL over the same
+// Read models for the dashboard. Plain SQL over the same
 // tables the engine writes — no separate read store, the dashboard is a lens.
 // All money fields go out as ::text so bigint survives JSON exactly.
 //
-// ponytail: offset pagination is an O(offset) scan — fine at demo scale;
+// NOTE: offset pagination is an O(offset) scan — fine at demo scale;
 // switch the intents list to keyset-on-ULID if a table ever grows past ~100k.
 
 const PAGE = {
@@ -28,7 +28,7 @@ interface PageQuery {
 export interface ReadModelOptions {
   providerUrl: string;
   providerTimeoutMs: number;
-  /** Demo-only gate for the provider-config passthrough (audit M4). */
+  /** Demo-only gate for the provider-config passthrough. */
   enableProviderConfig: boolean;
 }
 
@@ -251,7 +251,7 @@ export function registerReadModels(
   // Provider-sim config passthrough, so the playground can flip failure modes
   // without talking to the provider directly (the browser only knows the API).
   //
-  // DEMO-ONLY CONTROL (audit M4): this forwards an arbitrary body — including
+  // DEMO-ONLY CONTROL: this forwards an arbitrary body — including
   // callback_url, an SSRF lever — to the provider. It is unauthenticated, so it
   // is gated behind ENABLE_PROVIDER_CONFIG=1 (set only in dev/compose). With the
   // flag off both routes 404. With it on, callback_url is still validated to a

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-// The README Mermaid flowchart, hand-rendered to the §2.2 tokens (bundled SVG —
+// The README Mermaid flowchart, hand-rendered to the design tokens (bundled SVG —
 // no mermaid runtime, no CDN). Same topology: client → API (idempotency →
 // intents → ledger/outbox) → worker → provider-sim / webhooks → receiver, with
 // the reconciler auditing ledger ⟷ provider, and the dashboard reading /v1.

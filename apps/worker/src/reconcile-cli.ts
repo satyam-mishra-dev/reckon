@@ -4,7 +4,7 @@ import { pino } from 'pino';
 import { loadWorkerConfig } from './config.js';
 import { reportFailures, runReconciliation } from './reconciler.js';
 
-// One full reconciliation pass, CI-able (brief §4.8): exits non-zero on any
+// One full reconciliation pass, CI-able: exits non-zero on any
 // drift, internal violation, unresolved orphan, or CRITICAL flag.
 //
 //   npm run reconcile                     # DATABASE_URL + PROVIDER_URL from env

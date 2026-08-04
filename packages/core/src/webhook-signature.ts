@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-// Stripe-style webhook signing (brief §4.7).
+// Stripe-style webhook signing.
 //
 // Header:   Reckon-Signature: t=<unix seconds>,v1=<hex hmac_sha256(secret, "<t>.<body>")>
 // The timestamp is INSIDE the signed payload, so an attacker cannot take a

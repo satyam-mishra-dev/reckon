@@ -8,7 +8,7 @@ import { Client, Pool } from 'pg';
 import { seed } from '@reckon/db';
 import { signWebhook } from '@reckon/core';
 
-// THE SIGNATURE DEMO (brief §4.9): pump N payment intents at the API while
+// THE SIGNATURE DEMO: pump N payment intents at the API while
 //   - SIGKILLing the worker every 5-15s and restarting it,
 //   - flipping the provider failure profile every 10s
 //     (healthy → high-latency → declines → timeout-after-charge → duplicate callbacks),
@@ -333,7 +333,7 @@ async function redeliverLoop(pool: Pool): Promise<void> {
     await idle(2000);
     if (chaosDone) return;
     try {
-      // ponytail: ORDER BY random() is an O(n) table scan — fine at chaos scale
+      // NOTE: ORDER BY random() is an O(n) table scan — fine at chaos scale
       // (≤ tens of thousands of rows); switch to TABLESAMPLE if it ever isn't.
       const picked = await pool.query<{
         id: string;
@@ -685,7 +685,7 @@ async function scoreboardAndAssert(pool: Pool, reconcileExit: number): Promise<s
   );
   check(pendingDeliveries === 0, `${pendingDeliveries} deliveries still pending`);
   // A fully-broken webhook pipeline would leave 0 delivered / 0 dead and pass
-  // vacuously — assert the pipeline actually did work (audit O3).
+  // vacuously — assert the pipeline actually did work.
   check(deadDeliveries === 0, `${deadDeliveries} dead webhook deliveries`);
   check(delivered > 0, 'no webhooks were delivered (webhook pipeline never ran)');
   check(redeliveries > 0, 'no redeliveries were injected (dedupe proof never exercised)');

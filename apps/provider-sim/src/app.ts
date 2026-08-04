@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import Fastify, { type FastifyInstance } from 'fastify';
 
-// Deliberately-unreliable payment provider (brief §4.6). All evil is opt-in
+// Deliberately-unreliable payment provider. All evil is opt-in
 // via PUT /config so tests and demos are deterministic by default.
 
 export interface SimConfig {
@@ -100,7 +100,7 @@ export function buildProviderSim(): FastifyInstance {
           additionalProperties: false,
           properties: {
             // Cap at 2^53-1: above it a JS-number amount loses precision and a
-            // bigint charge would misrecord (audit M1, mirrors the API schema).
+            // bigint charge would misrecord (mirrors the API schema).
             amount_minor: { type: 'integer', minimum: 1, maximum: 9_007_199_254_740_991 },
             currency: { type: 'string', minLength: 3, maxLength: 3 },
           },

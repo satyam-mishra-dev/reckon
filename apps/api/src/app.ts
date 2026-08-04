@@ -27,9 +27,9 @@ interface StoredResponseRow {
 
 // Largest integer JS carries exactly (2^53 - 1). Above it, amount_minor (a JS
 // number on the wire) silently loses precision; above 2^63 the bigint column
-// overflows and the key wedges at 'started'. The schema caps it here (audit
-// M1/O1). The minimum of 50 keeps the +30 fixed fee below the charge — Stripe's
-// $0.50 floor, re-derived (audit M2, DECISIONS: "Minimum charge amount").
+// overflows and the key wedges at 'started'. The schema caps it here.
+// The minimum of 50 keeps the +30 fixed fee below the charge — Stripe's
+// $0.50 floor, re-derived (see DECISIONS: "Minimum charge amount").
 const MAX_AMOUNT_MINOR = 9_007_199_254_740_991;
 const MIN_AMOUNT_MINOR = 50;
 
@@ -53,7 +53,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   });
 
   // A single idle-client error (PG restart/failover) would otherwise crash the
-  // whole process with an unhandled 'error' event (audit C4/O2). Log and let
+  // whole process with an unhandled 'error' event. Log and let
   // the pool reconnect on next use.
   pool.on('error', (err) => {
     app.log.error({ err }, 'postgres pool idle client error');
@@ -130,7 +130,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         },
         // ajv coerceTypes (Fastify default, needed for querystring ints elsewhere)
         // would turn {amount_minor: true} -> 1 and "100" -> 100 into real charges.
-        // Reject a present-but-non-numeric amount BEFORE coercion (audit M3); the
+        // Reject a present-but-non-numeric amount BEFORE coercion; the
         // schema then enforces integer/range on genuine numbers.
         preValidation: async (request, reply) => {
           const raw = (request.body as { amount_minor?: unknown } | null | undefined)?.amount_minor;
@@ -153,7 +153,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
 
         // This request's lock owner token: stamped in locked_by wherever we take
         // the lock, then required by every pipeline unlock/pointer advance so a
-        // stale-lock takeover fences this actor out (audit C1/C2).
+        // stale-lock takeover fences this actor out.
         const owner = randomUUID();
 
         // Upsert the key row, taking the lock on insert. UNIQUE(merchant_id, key)
@@ -248,7 +248,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           // Clear the lock on this exit path too, so a client retry can resume
           // immediately — but ONLY if we still own it (locked_by = owner). A
           // stale-lock takeover already handed the key to another actor; clearing
-          // its fresh lock would let a third actor run concurrently (audit C2).
+          // its fresh lock would let a third actor run concurrently.
           try {
             await pool.query(
               `UPDATE idempotency_keys SET locked_at = NULL, locked_by = NULL
@@ -264,7 +264,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     );
 
     // -------------------------------------------------------------------------
-    // Webhook + DLQ ops endpoints (brief §4.7).
+    // Webhook + DLQ ops endpoints.
     // -------------------------------------------------------------------------
 
     const UUID_PATTERN = '^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$';
@@ -388,7 +388,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       enableProviderConfig: config.enableProviderConfig,
     });
 
-    // Reconciliation reports (brief §4.8) — one row per pass, newest first.
+    // Reconciliation reports — one row per pass, newest first.
     app.get<{ Querystring: { limit: number } }>(
       '/v1/reconciliations',
       {

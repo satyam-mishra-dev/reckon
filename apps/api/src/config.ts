@@ -11,7 +11,7 @@ export interface ApiConfig {
   /** Age past which a held idempotency-key lock is considered stale (dead process). */
   lockTimeoutMs: number;
   logLevel: string;
-  /** Demo-only: expose PUT/GET /v1/provider/config passthrough (audit M4). Off by default. */
+  /** Demo-only: expose PUT/GET /v1/provider/config passthrough. Off by default. */
   enableProviderConfig: boolean;
 }
 

@@ -1,6 +1,6 @@
 import type { QueryResult, QueryResultRow } from 'pg';
 
-// Hand-rolled Postgres job queue (brief §4.5) — deliberately not BullMQ; the
+// Hand-rolled Postgres job queue — deliberately not BullMQ; the
 // primitive IS the point. Designs studied: pg-boss (SKIP LOCKED claim shape,
 // retry backoff SQL) and asynq (visibility timeout / lease recovery).
 //

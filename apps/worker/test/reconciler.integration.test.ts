@@ -10,7 +10,7 @@ import { buildProviderSim, type SimCharge } from '@reckon/provider-sim';
 import { buildApp } from '@reckon/api/app';
 import { reportFailures, runReconciliation, type ReconcilerOptions } from '../src/reconciler.js';
 
-// The reconciler (brief §4.8, day 6 gate): a clean ledger reports zero drift;
+// The reconciler (day 6 gate): a clean ledger reports zero drift;
 // an injected timeout-after-charge orphan is detected via provider /truth and
 // RESOLVED (pipeline replay, or applied from truth when the provider is
 // unreachable); an injected unbalanced transaction makes the pass fail.

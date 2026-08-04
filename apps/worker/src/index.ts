@@ -9,7 +9,7 @@ const worker = startWorker(config, log);
 let shuttingDown = false;
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   // .on (not .once): a second signal during a hanging/rejecting drain hard-exits
-  // instead of waiting for SIGKILL, and a rejected stop exits non-zero (audit O7).
+  // instead of waiting for SIGKILL, and a rejected stop exits non-zero.
   process.on(signal, () => {
     if (shuttingDown) {
       log.warn({ signal }, 'second signal — hard exit');

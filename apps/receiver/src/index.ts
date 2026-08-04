@@ -12,7 +12,7 @@ await app.listen({ port, host: '0.0.0.0' });
 let shuttingDown = false;
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
-    if (shuttingDown) process.exit(1); // second signal: hard exit (audit O7)
+    if (shuttingDown) process.exit(1); // second signal: hard exit
     shuttingDown = true;
     app
       .close()

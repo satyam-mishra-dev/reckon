@@ -7,7 +7,7 @@ import { runner } from 'node-pg-migrate';
 import { Client } from 'pg';
 import { enqueueJob } from '@reckon/core';
 
-// THE KILL TEST (brief §4.10 day 4 gate): SIGKILL a REAL worker process
+// THE KILL TEST: SIGKILL a REAL worker process
 // mid-job, prove the job is stuck 'running' with a stale lease, then prove a
 // second worker's sweeper returns it to 'pending' and completes it — with an
 // observable side effect (an events row) written exactly once.

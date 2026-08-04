@@ -3,9 +3,9 @@ import type { Pool, PoolClient } from 'pg';
 import type { Logger } from 'pino';
 import { applyTransition, runIntentPipeline, type IntentRow } from '@reckon/api/pipeline';
 
-// The reconciler (brief §4.8). postTransaction enforces the balance invariant
+// The reconciler. postTransaction enforces the balance invariant
 // at write time; this module RE-VERIFIES it from cold data — the function
-// proves intent, the reconciler proves nobody bypassed it (notes §5).
+// proves intent, the reconciler proves nobody bypassed it.
 //
 // Internal pass: every ledger transaction balances (drift = Σ|debits-credits|),
 // every succeeded intent has exactly its charge+fee postings with the right
@@ -136,7 +136,7 @@ type LockResult = { status: 'locked'; owner: string } | { status: 'busy' } | { s
 
 /**
  * Free-or-stale key lock takeover — identical rule to the API and completer,
- * and now stamps an owner token (audit C1/C2) so the pipeline it hands off to
+ * and now stamps an owner token so the pipeline it hands off to
  * is fenced against a competing actor.
  */
 async function takeKeyLock(pool: Pool, keyId: string, lockTimeoutMs: number): Promise<LockResult> {
@@ -196,7 +196,7 @@ async function applyTruthCharge(
       `UPDATE payment_intents SET provider_ref = $2, updated_at = now() WHERE id = $1`,
       [intent.id, charge.id],
     );
-    // Owner-fenced pointer advance (audit C1/C2): if the stale lock was stolen
+    // Owner-fenced pointer advance: if the stale lock was stolen
     // while we applied truth, this affects 0 rows and the whole apply rolls back.
     const advanced = await client.query<{ id: string }>(
       `UPDATE idempotency_keys SET recovery_point = 'provider_charged'
@@ -408,8 +408,8 @@ export async function runReconciliation(
               intent_status: string | null;
               age_ms: number;
             }>(
-              // age_ms is measured against OUR key's created_at in Postgres time
-              // (audit C6): comparing the provider's created_at to a local
+              // age_ms is measured against OUR key's created_at in Postgres time:
+              // comparing the provider's created_at to a local
               // Date.now() lets clock skew make in-flight charges look orphaned.
               `SELECT k.id, k.recovery_point, i.status AS intent_status,
                       (EXTRACT(EPOCH FROM (now() - k.created_at)) * 1000)::float8 AS age_ms

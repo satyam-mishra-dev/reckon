@@ -1,10 +1,10 @@
 -- Up Migration
 
--- Reckon core schema (project brief §4.1).
+-- Reckon core schema.
 -- Money is ALWAYS bigint minor units (cents). Never floats: binary floating
 -- point cannot represent decimal money exactly and drifts under summation.
 
--- Not in the brief's table list, but merchant_id is referenced by three tables
+-- Not in the core table list, but merchant_id is referenced by three tables
 -- below; foreign keys need a target.
 CREATE TABLE merchants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

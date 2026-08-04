@@ -6,7 +6,7 @@ import * as SliderPrimitive from '@radix-ui/react-slider';
 import { X } from 'lucide-react';
 import { cn } from '../lib/cn';
 
-// Themed shadcn-style primitives. Every color is a §2.2 token; radius 4px; flat
+// Themed shadcn-style primitives. Every color is a design token; radius 4px; flat
 // (1px --rule borders, no card shadow); elevation lives only on dialogs/sheets.
 
 // ---------------------------------------------------------------- Button

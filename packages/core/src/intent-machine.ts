@@ -1,4 +1,4 @@
-// Payment-intent lifecycle as a pure state machine (brief §4.4). Zero I/O —
+// Payment-intent lifecycle as a pure state machine. Zero I/O —
 // the API layer persists the result and writes the outbox event in the same
 // TX; this module only decides which edges exist.
 //

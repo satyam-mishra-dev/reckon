@@ -464,7 +464,7 @@ export function Playground(): ReactNode {
     setIdentity(null);
   }
 
-  // Orchestrated moment (§2.5): first visit auto-runs the double-submit showcase.
+  // Orchestrated moment: first visit auto-runs the double-submit showcase.
   function runShowcase(): void {
     setAmount('49.99');
     const k = newKey();

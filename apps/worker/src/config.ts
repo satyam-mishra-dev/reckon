@@ -33,15 +33,15 @@ export interface WorkerConfig {
   /** Completer enqueuer interval + how long a key may sit non-finished before re-driving. */
   completerIntervalMs: number;
   completerGraceMs: number;
-  /** Backstop cap: failed completion attempts before a stuck key is driven terminal (audit C5). */
+  /** Backstop cap: failed completion attempts before a stuck key is driven terminal. */
   completerMaxAttempts: number;
   /** Age past which a held idempotency-key lock is stale (same rule as the API). */
   idempotencyLockTimeoutMs: number;
-  /** Liveness file touched every poll; the compose healthcheck asserts a recent mtime (audit O2). */
+  /** Liveness file touched every poll; the compose healthcheck asserts a recent mtime. */
   livenessFile: string;
   /** Webhook POST timeout. */
   webhookTimeoutMs: number;
-  /** Retry policy for all job kinds (webhook spec §4.7: 1s·2^n + jitter, 10 attempts). */
+  /** Retry policy for all job kinds (1s·2^n + jitter, 10 attempts). */
   maxAttempts: number;
   backoffBaseMs: number;
   backoffCapMs: number;

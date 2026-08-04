@@ -1,6 +1,6 @@
 import type { ClientBase } from 'pg';
 
-// Money is bigint minor units everywhere — never floats (brief §4.1).
+// Money is bigint minor units everywhere — never floats.
 
 export type Direction = 'debit' | 'credit';
 export type TransactionKind = 'charge' | 'fee' | 'refund' | 'reversal';

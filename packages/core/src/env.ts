@@ -1,4 +1,4 @@
-// Numeric env parsing with startup validation (audit O4). A mistyped duration
+// Numeric env parsing with startup validation. A mistyped duration
 // otherwise fails silently and catastrophically: HEARTBEAT_MS='' -> Number('')
 // = 0 -> sleep(0) hot loop; PROVIDER_TIMEOUT_MS='abc' -> NaN -> every provider
 // call aborts instantly. Reject NaN and non-positive values loudly at boot.

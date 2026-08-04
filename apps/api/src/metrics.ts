@@ -1,6 +1,6 @@
 // Homegrown metrics: counters + one fixed-bucket histogram shape, rendered as
 // Prometheus-style text. Deliberately not prom-client — a few Maps is all the
-// brief's /metrics endpoint needs.
+// /metrics endpoint needs.
 
 type Labels = Record<string, string>;
 

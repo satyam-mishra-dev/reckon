@@ -363,7 +363,7 @@ describe('stale-lock takeover fencing (owner token + CAS)', () => {
   // The gap the crash/kill tests miss: the original actor never dies. It stalls
   // (here: blocked inside a slow provider call) past the lock timeout while
   // STILL ALIVE, a second actor steals the stale lock and finishes the payment,
-  // and then the original resumes. Without owner-token fencing (audit C1/C2) the
+  // and then the original resumes. Without owner-token fencing the
   // resumed original would advance the pointer it no longer owns and post a
   // second succeeded event (duplicate webhook). With fencing it aborts cleanly.
 
