@@ -342,11 +342,9 @@ async function phaseProviderTimeout(
   });
 }
 
-// Chart of accounts is immutable seed data (INSERT-only, never updated/deleted),
-// so the per-currency {type -> account_id} map is resolved once per process and
-// reused — cutting one SELECT off every payment's ledger phase.
-// NOTE: process-local cache of immutable seed rows; a new currency's
-// accounts are fetched lazily on first use. Restart on chart-of-accounts change.
+// Chart of accounts is immutable seed data (INSERT-only), so cache the
+// per-currency {type -> account_id} map process-wide and skip one SELECT per
+// payment. A new currency is fetched lazily; restart on a chart-of-accounts change.
 const accountsByCurrency = new Map<string, Map<string, string>>();
 
 export async function resolveAccounts(
