@@ -13,6 +13,10 @@ const port = Number(process.env.PORT ?? 4801);
 // 127.0.0.1, not localhost: undici resolves localhost to ::1 first and a v4-only
 // API refuses the connection. Compose overrides this with API_URL=http://api:4800.
 const apiUrl = process.env.API_URL ?? 'http://127.0.0.1:4800';
+// The dashboard is a trusted same-origin demo UI, so its proxy authenticates on
+// the browser's behalf with the seeded demo merchant key (documented in
+// .env.example / DECISIONS). NOTE: keep in sync with @reckon/db DEMO_API_KEY.
+const apiKey = process.env.RECKON_API_KEY ?? 'rk_demo_0000000000000000000000000000';
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
 
@@ -27,7 +31,7 @@ async function proxy(
   reply: FastifyReply,
   target: string,
 ): Promise<unknown> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { authorization: `Bearer ${apiKey}` };
   for (const name of ['content-type', 'idempotency-key', 'accept'] as const) {
     const value = request.headers[name];
     if (typeof value === 'string') headers[name] = value;

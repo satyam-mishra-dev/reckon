@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { runner } from 'node-pg-migrate';
 import { Pool } from 'pg';
 import { pino } from 'pino';
-import { seed } from '@reckon/db';
+import { seed, DEMO_API_KEY } from '@reckon/db';
 import { buildProviderSim } from '@reckon/provider-sim';
 import { buildReceiver, type ReceivedEvent, type ReceiverOptions } from '@reckon/receiver';
 import { buildApp } from '@reckon/api/app';
@@ -148,6 +148,7 @@ beforeAll(async () => {
   const registered = await api.inject({
     method: 'POST',
     url: '/v1/webhook_endpoints',
+    headers: { authorization: `Bearer ${DEMO_API_KEY}` },
     payload: { url: `${receiverUrl}/webhooks` },
   });
   expect(registered.statusCode).toBe(201);
@@ -172,7 +173,11 @@ describe('intent E2E -> signed webhook delivery', () => {
     const res = await api.inject({
       method: 'POST',
       url: '/v1/payment_intents',
-      headers: { 'idempotency-key': 'wh-1', 'content-type': 'application/json' },
+      headers: {
+        'idempotency-key': 'wh-1',
+        'content-type': 'application/json',
+        authorization: `Bearer ${DEMO_API_KEY}`,
+      },
       payload: { amount_minor: 10_000, currency: 'USD' },
     });
     expect(res.statusCode).toBe(200);

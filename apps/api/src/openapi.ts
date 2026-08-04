@@ -26,7 +26,12 @@ interface OperationDoc {
   summary: string;
   description: string;
   responses: Record<string, ResponseDoc>;
+  /** Set on merchant-authenticated operations; renders the lock in swagger-ui. */
+  security?: Record<string, string[]>[];
 }
+
+/** The API-key security requirement shared by every merchant-authenticated operation. */
+const MERCHANT_AUTH: Record<string, string[]>[] = [{ BearerAuth: [] }, { ApiKeyAuth: [] }];
 
 const json = (schema: unknown, example?: unknown): ResponseDoc['content'] => ({
   'application/json': example === undefined ? { schema } : { schema, example },
@@ -50,10 +55,18 @@ Reckon is a money-movement engine: idempotent payment intents, orchestration
 across an unreliable card provider, an append-only double-entry ledger, and
 signed webhooks with retries and a dead-letter queue.
 
-This is a self-contained demo API. There is **no authentication** — a single
-seeded merchant is resolved server-side. Money is never lost or double-charged
-across crashes, timeouts, and concurrent duplicate requests; the guarantees
-below are what make that true.
+This is a self-contained demo API. Money is never lost or double-charged across
+crashes, timeouts, and concurrent duplicate requests; the guarantees below are
+what make that true.
+
+## Authentication
+
+Merchant-facing endpoints (create intent, refund, register webhook, list
+payouts) require a **merchant API key**, sent as \`Authorization: Bearer <key>\`
+(or \`X-API-Key: <key>\`). The key identifies the merchant server-side; a missing
+or invalid key is \`401\`. Read models, health, metrics, and these docs are open.
+This is **demo-grade** auth: a single static key per merchant, stored only as a
+sha256 hash, with no rotation, scopes, or expiry (see DECISIONS).
 
 ## Idempotency
 
@@ -221,12 +234,18 @@ const OPERATIONS: Record<string, Record<string, OperationDoc>> = {
     post: {
       tags: ['Payments'],
       summary: 'Create a payment intent',
+      security: MERCHANT_AUTH,
       description:
         'Charges the card provider and posts the double-entry ledger, exactly once per ' +
-        '`Idempotency-Key`. **The `Idempotency-Key` header is required.** Safe to retry: ' +
-        'replays return the stored response verbatim; a same-key/different-body reuse is a ' +
-        '`409` conflict; a `503` means the provider timed out — retry the same key to resume.',
+        '`Idempotency-Key`. **Requires a merchant API key** (`Authorization: Bearer <key>`) and ' +
+        'the `Idempotency-Key` header. Safe to retry: replays return the stored response ' +
+        'verbatim; a same-key/different-body reuse is a `409` conflict; a `503` means the ' +
+        'provider timed out — retry the same key to resume.',
       responses: {
+        '401': {
+          description: 'Missing or invalid API key.',
+          content: json(ref('Error'), { error: 'unauthorized', message: 'invalid API key' }),
+        },
         '200': {
           description: 'Succeeded (or a byte-identical replay of a prior success).',
           content: json(ref('PaymentIntent'), {
@@ -333,14 +352,20 @@ const OPERATIONS: Record<string, Record<string, OperationDoc>> = {
     post: {
       tags: ['Payments'],
       summary: 'Refund a payment intent',
+      security: MERCHANT_AUTH,
       description:
-        'Refunds a **succeeded** intent, in full or in part. Omit `amount_minor` to refund the ' +
-        'full remaining refundable amount; multiple partial refunds accumulate up to the charged ' +
-        'amount. **The `Idempotency-Key` header is required** and is the dedupe key: a retry with ' +
-        'the same key replays the original refund (`200`) and posts no second ledger transaction. ' +
-        'The processing **fee is not returned** — the merchant bears it, so a full refund drives ' +
-        '`merchant_payable` to `-fee`.',
+        'Refunds a **succeeded** intent, in full or in part. **Requires a merchant API key**; a ' +
+        'merchant can only refund its own intents (others are `404`). Omit `amount_minor` to ' +
+        'refund the full remaining refundable amount; multiple partial refunds accumulate up to ' +
+        'the charged amount. **The `Idempotency-Key` header is required** and is the dedupe key: ' +
+        'a retry with the same key replays the original refund (`200`) and posts no second ledger ' +
+        'transaction. The processing **fee is not returned** — the merchant bears it, so a full ' +
+        'refund drives `merchant_payable` to `-fee`.',
       responses: {
+        '401': {
+          description: 'Missing or invalid API key.',
+          content: json(ref('Error'), { error: 'unauthorized', message: 'invalid API key' }),
+        },
         '201': {
           description: 'A new refund was posted.',
           content: json(ref('Refund'), {
@@ -450,11 +475,17 @@ const OPERATIONS: Record<string, Record<string, OperationDoc>> = {
     get: {
       tags: ['Ledger'],
       summary: 'List the merchant’s payouts',
+      security: MERCHANT_AUTH,
       description:
         'Settlement payouts for the authenticated merchant, newest first (`limit` 1–100, ' +
-        'default 50). Each payout swept that merchant’s outstanding `merchant_payable` balance ' +
-        'into `payout_clearing` as one append-only ledger transaction. Money as strings.',
+        'default 50). **Requires a merchant API key.** Each payout swept that merchant’s ' +
+        'outstanding `merchant_payable` balance into `payout_clearing` as one append-only ledger ' +
+        'transaction. Money as strings.',
       responses: {
+        '401': {
+          description: 'Missing or invalid API key.',
+          content: json(ref('Error'), { error: 'unauthorized', message: 'invalid API key' }),
+        },
         '200': {
           description: 'The merchant’s payouts.',
           content: json(
@@ -510,10 +541,16 @@ const OPERATIONS: Record<string, Record<string, OperationDoc>> = {
     post: {
       tags: ['Webhooks'],
       summary: 'Register a webhook endpoint',
+      security: MERCHANT_AUTH,
       description:
-        'Registers a URL to receive signed events. The signing secret (`whsec_…`) is returned ' +
-        '**once, here** — store it; it is used to verify the `Reckon-Signature` on every delivery.',
+        'Registers a URL to receive signed events. **Requires a merchant API key.** The signing ' +
+        'secret (`whsec_…`) is returned **once, here** — store it; it is used to verify the ' +
+        '`Reckon-Signature` on every delivery.',
       responses: {
+        '401': {
+          description: 'Missing or invalid API key.',
+          content: json(ref('Error'), { error: 'unauthorized', message: 'invalid API key' }),
+        },
         '201': {
           description: 'The endpoint id, its URL, and the one-time signing secret.',
           content: json(
@@ -689,7 +726,22 @@ export function registerDocs(app: FastifyInstance): void {
         },
         { name: 'Ops', description: 'Health, metrics, and demo-only controls.' },
       ],
-      components: { schemas: COMPONENT_SCHEMAS },
+      components: {
+        schemas: COMPONENT_SCHEMAS,
+        securitySchemes: {
+          BearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            description: 'Merchant API key sent as `Authorization: Bearer <key>`.',
+          },
+          ApiKeyAuth: {
+            type: 'apiKey',
+            in: 'header',
+            name: 'X-API-Key',
+            description: 'Merchant API key sent as the `X-API-Key` header (fallback for Bearer).',
+          },
+        },
+      },
     },
     transformObject: (documentObject) => {
       // We only run in OpenAPI mode, so the union always carries openapiObject.

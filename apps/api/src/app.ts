@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { Pool } from 'pg';
 import { enqueueJob, postTransactionInTx } from '@reckon/core';
 import type { ApiConfig } from './config.js';
@@ -13,6 +13,14 @@ import {
 } from './pipeline.js';
 import { registerReadModels } from './read-models.js';
 import { registerDocs } from './openapi.js';
+
+// Demo-grade auth: the merchant a request is acting as, resolved from its API
+// key by the authenticate hook. Set on every merchant-facing route.
+declare module 'fastify' {
+  interface FastifyRequest {
+    merchantId?: string;
+  }
+}
 
 export interface BuildAppOptions {
   config: ApiConfig;
@@ -126,23 +134,52 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       return reply.type('text/plain; version=0.0.4').send(renderMetrics());
     });
 
-    // Single seeded demo merchant until auth exists; resolved lazily, cached.
-    let merchantId: string | null = null;
-    async function getMerchantId(): Promise<string> {
-      if (merchantId === null) {
-        const result = await pool.query<{ id: string }>(
-          'SELECT id FROM merchants ORDER BY created_at LIMIT 1',
-        );
-        const row = result.rows[0];
-        if (row === undefined) throw new Error('no merchant seeded — run the db seed first');
-        merchantId = row.id;
+    // Demo-grade merchant auth. Read the API key from `Authorization: Bearer
+    // <key>` (falling back to `X-API-Key`), sha256-hash it, look up the merchant,
+    // and attach merchant_id to the request; 401 on a missing/invalid key. Only
+    // the hash is ever compared — plaintext keys are never stored. Attached as an
+    // onRequest hook on merchant-facing routes so it fences off body validation.
+    async function authenticate(request: FastifyRequest, reply: FastifyReply) {
+      const header = request.headers['authorization'];
+      let key: string | undefined;
+      if (typeof header === 'string' && header.startsWith('Bearer ')) {
+        key = header.slice('Bearer '.length).trim();
+      } else {
+        const alt = request.headers['x-api-key'];
+        if (typeof alt === 'string') key = alt.trim();
       }
-      return merchantId;
+      if (key === undefined || key.length === 0) {
+        return reply.code(401).send({
+          error: 'unauthorized',
+          message: 'missing API key (send Authorization: Bearer <key>)',
+        });
+      }
+      const keyHash = createHash('sha256').update(key).digest('hex');
+      // Validate + stamp last_used_at in one round trip.
+      const found = await pool.query<{ merchant_id: string }>(
+        `UPDATE api_keys SET last_used_at = now() WHERE key_hash = $1 RETURNING merchant_id`,
+        [keyHash],
+      );
+      const row = found.rows[0];
+      if (row === undefined) {
+        return reply.code(401).send({ error: 'unauthorized', message: 'invalid API key' });
+      }
+      request.merchantId = row.merchant_id;
+    }
+
+    // The authenticated merchant. The authenticate hook guarantees it is set on
+    // every route it guards, so this only throws on a wiring bug (route missing
+    // the hook), never on a real request.
+    function merchantOf(request: FastifyRequest): string {
+      const id = request.merchantId;
+      if (id === undefined) throw new Error('route reached without authenticate hook');
+      return id;
     }
 
     app.post<{ Body: CreateIntentBody; Headers: { 'idempotency-key': string } }>(
       '/v1/payment_intents',
       {
+        onRequest: authenticate,
         schema: {
           // Missing Idempotency-Key fails schema validation -> 400.
           headers: {
@@ -186,7 +223,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         };
         const paramsJson = JSON.stringify(params); // fixed key order -> canonical hash input
         const requestHash = createHash('sha256').update(paramsJson).digest('hex');
-        const merchant = await getMerchantId();
+        const merchant = merchantOf(request);
 
         // This request's lock owner token: stamped in locked_by wherever we take
         // the lock, then required by every pipeline unlock/pointer advance so a
@@ -316,6 +353,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     }>(
       '/v1/payment_intents/:id/refunds',
       {
+        onRequest: authenticate,
         schema: {
           headers: {
             type: 'object',
@@ -369,7 +407,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
               [intentId],
             );
             const intent = intentRes.rows[0];
-            if (intent === undefined) {
+            // A merchant may only refund its own intents; an intent belonging to
+            // another merchant is a 404 (never leak that it exists).
+            if (intent === undefined || intent.merchant_id !== merchantOf(request)) {
               return { code: 404, body: { error: 'not_found' } };
             }
             if (intent.status !== 'succeeded') {
@@ -497,6 +537,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     app.post<{ Body: { url: string } }>(
       '/v1/webhook_endpoints',
       {
+        onRequest: authenticate,
         schema: {
           body: {
             type: 'object',
@@ -509,7 +550,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       async (request, reply) => {
         // The secret is returned exactly once, at registration — Stripe-style.
         const secret = `whsec_${randomBytes(24).toString('hex')}`;
-        const merchant = await getMerchantId();
+        const merchant = merchantOf(request);
         const result = await pool.query<{ id: string }>(
           'INSERT INTO webhook_endpoints (merchant_id, url, secret) VALUES ($1, $2, $3) RETURNING id',
           [merchant, request.body.url, secret],
@@ -654,6 +695,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     app.get<{ Querystring: { limit: number } }>(
       '/v1/payouts',
       {
+        onRequest: authenticate,
         schema: {
           querystring: {
             type: 'object',
@@ -663,7 +705,7 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         },
       },
       async (request) => {
-        const merchant = await getMerchantId();
+        const merchant = merchantOf(request);
         const result = await pool.query(
           `SELECT id, amount_minor::text, status, created_at
            FROM payouts WHERE merchant_id = $1

@@ -5,7 +5,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import type { FastifyInstance } from 'fastify';
 import { runner } from 'node-pg-migrate';
 import { Pool } from 'pg';
-import { seed } from '@reckon/db';
+import { seed, DEMO_API_KEY } from '@reckon/db';
 import { chargeFeeMinor } from '@reckon/core';
 import { buildProviderSim, type SimConfig } from '@reckon/provider-sim';
 import { buildApp } from '../src/app.js';
@@ -25,7 +25,11 @@ async function postIntent(key: string, payload: Record<string, unknown>) {
   return await app.inject({
     method: 'POST',
     url: '/v1/payment_intents',
-    headers: { 'content-type': 'application/json', 'idempotency-key': key },
+    headers: {
+      'content-type': 'application/json',
+      'idempotency-key': key,
+      authorization: `Bearer ${DEMO_API_KEY}`,
+    },
     payload,
   });
 }
@@ -35,7 +39,10 @@ async function postRefund(
   key: string | null,
   payload: Record<string, unknown> = {},
 ) {
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    authorization: `Bearer ${DEMO_API_KEY}`,
+  };
   if (key !== null) headers['idempotency-key'] = key;
   return await app.inject({
     method: 'POST',
@@ -265,6 +272,17 @@ describe('refunds', () => {
       const intentId = await createSucceededIntent(5_000);
       const res = await postRefund(intentId, null, { amount_minor: 100 });
       expect(res.statusCode).toBe(400);
+    });
+
+    it('401s without an API key', async () => {
+      const intentId = await createSucceededIntent(5_000);
+      const res = await app.inject({
+        method: 'POST',
+        url: `/v1/payment_intents/${intentId}/refunds`,
+        headers: { 'content-type': 'application/json', 'idempotency-key': `r-${randomUUID()}` },
+        payload: { amount_minor: 100 },
+      });
+      expect(res.statusCode).toBe(401);
     });
   });
 });

@@ -5,7 +5,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { runner } from 'node-pg-migrate';
 import { Pool } from 'pg';
 import { pino } from 'pino';
-import { seed } from '@reckon/db';
+import { seed, DEMO_API_KEY } from '@reckon/db';
 import { buildProviderSim, type SimCharge } from '@reckon/provider-sim';
 import { buildApp } from '@reckon/api/app';
 import { reportFailures, runReconciliation, type ReconcilerOptions } from '../src/reconciler.js';
@@ -40,7 +40,11 @@ async function createIntent(key: string, amountMinor: number): Promise<number> {
   const res = await api.inject({
     method: 'POST',
     url: '/v1/payment_intents',
-    headers: { 'idempotency-key': key, 'content-type': 'application/json' },
+    headers: {
+      'idempotency-key': key,
+      'content-type': 'application/json',
+      authorization: `Bearer ${DEMO_API_KEY}`,
+    },
     payload: { amount_minor: amountMinor, currency: 'USD' },
   });
   return res.statusCode;

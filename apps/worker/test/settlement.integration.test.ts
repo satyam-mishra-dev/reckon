@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { runner } from 'node-pg-migrate';
 import { Pool } from 'pg';
 import { pino } from 'pino';
-import { seed } from '@reckon/db';
+import { seed, DEMO_API_KEY } from '@reckon/db';
 import { chargeFeeMinor } from '@reckon/core';
 import { buildProviderSim, type SimConfig } from '@reckon/provider-sim';
 import { buildApp } from '@reckon/api/app';
@@ -26,11 +26,17 @@ let api: FastifyInstance;
 
 const log = pino({ level: 'silent' });
 
+const authHeaders = (idempotencyKey: string): Record<string, string> => ({
+  'idempotency-key': idempotencyKey,
+  'content-type': 'application/json',
+  authorization: `Bearer ${DEMO_API_KEY}`,
+});
+
 async function postIntent(amount: number): Promise<string> {
   const res = await api.inject({
     method: 'POST',
     url: '/v1/payment_intents',
-    headers: { 'idempotency-key': `charge-${randomUUID()}`, 'content-type': 'application/json' },
+    headers: authHeaders(`charge-${randomUUID()}`),
     payload: { amount_minor: amount, currency: 'USD' },
   });
   expect(res.statusCode).toBe(200);
@@ -41,7 +47,7 @@ async function postRefund(intentId: string, amount: number): Promise<void> {
   const res = await api.inject({
     method: 'POST',
     url: `/v1/payment_intents/${intentId}/refunds`,
-    headers: { 'idempotency-key': `refund-${randomUUID()}`, 'content-type': 'application/json' },
+    headers: authHeaders(`refund-${randomUUID()}`),
     payload: { amount_minor: amount },
   });
   expect(res.statusCode).toBe(201);

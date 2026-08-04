@@ -6,7 +6,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import type { FastifyInstance } from 'fastify';
 import { runner } from 'node-pg-migrate';
 import { Pool } from 'pg';
-import { seed } from '@reckon/db';
+import { seed, DEMO_API_KEY } from '@reckon/db';
 import { buildProviderSim, type SimCharge, type SimConfig } from '@reckon/provider-sim';
 import { buildApp } from '../src/app.js';
 import type { ApiConfig } from '../src/config.js';
@@ -36,7 +36,10 @@ async function postIntent(
   key: string | null,
   payload: Record<string, unknown>,
 ) {
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    authorization: `Bearer ${DEMO_API_KEY}`,
+  };
   if (key !== null) headers['idempotency-key'] = key;
   return await instance.inject({ method: 'POST', url: '/v1/payment_intents', headers, payload });
 }
@@ -463,5 +466,38 @@ describe('stale-lock takeover fencing (owner token + CAS)', () => {
     } finally {
       await shortApp.close();
     }
+  });
+});
+
+describe('auth', () => {
+  const body = { amount_minor: 5_000, currency: 'USD' };
+  const create = (headers: Record<string, string>) =>
+    app.inject({ method: 'POST', url: '/v1/payment_intents', headers, payload: body });
+
+  it('401s a request with no API key', async () => {
+    const res = await create({
+      'content-type': 'application/json',
+      'idempotency-key': `a-${randomUUID()}`,
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json<{ error: string }>().error).toBe('unauthorized');
+  });
+
+  it('401s a request with an invalid API key', async () => {
+    const res = await create({
+      'content-type': 'application/json',
+      'idempotency-key': `a-${randomUUID()}`,
+      authorization: 'Bearer not-a-real-key',
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('accepts the key via the X-API-Key fallback header', async () => {
+    const res = await create({
+      'content-type': 'application/json',
+      'idempotency-key': `a-${randomUUID()}`,
+      'x-api-key': DEMO_API_KEY,
+    });
+    expect(res.statusCode).toBe(200);
   });
 });

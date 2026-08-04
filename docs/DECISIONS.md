@@ -227,6 +227,34 @@ playground can flip failure profiles. It is unauthenticated and forwards
 a demo affordance, not a product surface — rejected leaving it always-on (an
 unauthenticated request-forwarding endpoint in a payments API is indefensible).
 
+## Demo-grade API auth (merchant API keys)
+
+Merchant-facing endpoints (create intent, refund, register webhook, list payouts)
+authenticate the caller as a merchant with an **API key** instead of trusting a
+client-supplied `merchant_id`. The key arrives as `Authorization: Bearer <key>`
+(fallback `X-API-Key`); a Fastify `onRequest` hook sha256-hashes it, looks the
+merchant up in `api_keys` by that hash, attaches `merchant_id` to the request,
+and `401`s a missing/invalid key — it runs before body validation so an
+unauthenticated request never reaches the pipeline. Only the **sha256 hex is
+stored, never the plaintext**; `last_used_at` is stamped on each use. The write
+paths now resolve the merchant from the key (not the first seeded row), and a
+refund is scoped to its owner (another merchant's intent is a `404`, not leaked).
+Read models, health, metrics, docs, and the ops triggers stay open (the dashboard
+polls them as a lens); the dashboard proxy authenticates the browser's requests
+with the seeded demo key.
+
+**Seed + demo key.** Each seeded merchant gets one static key (`DEMO_API_KEY`,
+documented in `.env.example`); the plaintext is printed once at seed time, and
+tests/dashboard share the constant to authenticate.
+
+**Ceiling — honestly demo-grade.** One static key per merchant, no rotation, no
+scopes/permissions, no expiry, and a fast unsalted sha256 (fine for a
+high-entropy random key, not for low-entropy secrets). A real build wants
+per-key scopes, rotation with overlap, and revocation — deliberately out of scope
+here. Rejected: bcrypt/argon2 hashing (the key is high-entropy, so a slow KDF
+buys nothing but latency), and JWTs (no third party to federate, and they'd hide
+the merchant lookup that is the point).
+
 ## Testcontainers over mocks for integration tests
 
 Every integration test runs against a real Postgres container (and real child

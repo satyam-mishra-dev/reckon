@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { runner } from 'node-pg-migrate';
 import { Pool } from 'pg';
 import { pino } from 'pino';
-import { seed } from '@reckon/db';
+import { seed, DEMO_API_KEY } from '@reckon/db';
 import { buildProviderSim, type SimCharge } from '@reckon/provider-sim';
 import { buildApp } from '@reckon/api/app';
 import type { WorkerConfig } from '../src/config.js';
@@ -109,7 +109,11 @@ describe('completer', () => {
     const crashed = await crashApp.inject({
       method: 'POST',
       url: '/v1/payment_intents',
-      headers: { 'idempotency-key': 'stuck-1', 'content-type': 'application/json' },
+      headers: {
+        'idempotency-key': 'stuck-1',
+        'content-type': 'application/json',
+        authorization: `Bearer ${DEMO_API_KEY}`,
+      },
       payload: { amount_minor: 6000, currency: 'USD' },
     });
     expect(crashed.statusCode).toBe(500);
