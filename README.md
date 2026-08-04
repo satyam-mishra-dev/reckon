@@ -45,7 +45,7 @@ Every number below is reproduced by a committed script. None are estimates.
 
 **Test suite**: 83 tests green — 50 unit (including a 1,000-transaction ledger property test) and 33 integration tests against real Postgres via Testcontainers. No mocked infrastructure.
 
-**Benchmarks** (`npm run bench` against the booted compose stack; Node, local Docker, M-series laptop — reproduce on your own hardware). Numbers below are the **median of 3 runs**; run-to-run RPS varies ±~30% on a shared laptop (this measurement box was co-resident with two other full Docker stacks). The committed `bench-results.json` is the most recent single run. See `PERFORMANCE.md` for the controlled before/after of the round-trip optimizations.
+**Benchmarks** (`npm run bench` against the booted compose stack; Node, local Docker, M-series laptop — reproduce on your own hardware). Numbers below are the **median of 3 runs**; run-to-run RPS varies ±~30% on a shared laptop (this measurement box was co-resident with two other full Docker stacks). The committed `bench-results.json` is the most recent single run. See `docs/PERFORMANCE.md` for the controlled before/after of the round-trip optimizations.
 
 | scenario                           | conc |     n | p50 ms | p95 ms | p99 ms |        RPS |
 | ---------------------------------- | ---: | ----: | -----: | -----: | -----: | ---------: |
@@ -62,7 +62,7 @@ Every number below is reproduced by a committed script. None are estimates.
 
 The replay rows are the point of the idempotency design: a finished key never re-enters the pipeline, it serves the stored response straight from Postgres — an order of magnitude faster than doing the work, and always byte-identical.
 
-A create was profiled down from **32 to 26 sequential DB round-trips** (4 → 3 write transactions) by caching the immutable chart-of-accounts per process and merging the two pure-DB terminal phases (ledger post + finish) into one transaction — with the crash-safety and idempotency-fencing invariants unchanged. Full methodology and before/after in `PERFORMANCE.md`.
+A create was profiled down from **32 to 26 sequential DB round-trips** (4 → 3 write transactions) by caching the immutable chart-of-accounts per process and merging the two pure-DB terminal phases (ledger post + finish) into one transaction — with the crash-safety and idempotency-fencing invariants unchanged. Full methodology and before/after in `docs/PERFORMANCE.md`.
 
 ## Demo
 
@@ -77,7 +77,7 @@ open http://localhost:4801/playground.html
 
 Interactive API docs (OpenAPI 3.1, served fully offline) at http://localhost:4800/docs — raw spec at http://localhost:4800/openapi.json.
 
-The playground fires real payments. "Double-submit ×5" sends five concurrent identical requests so you can watch idempotency produce five byte-identical responses and a single provider charge. The provider chaos panel flips the simulated card provider into declines or timeouts-after-charge; the intent feed shows failures, retries and recovery live. That panel drives an unauthenticated provider-config passthrough, so it is a **demo-only control gated behind `ENABLE_PROVIDER_CONFIG=1`** (set in compose; off everywhere else — see DECISIONS.md).
+The playground fires real payments. "Double-submit ×5" sends five concurrent identical requests so you can watch idempotency produce five byte-identical responses and a single provider charge. The provider chaos panel flips the simulated card provider into declines or timeouts-after-charge; the intent feed shows failures, retries and recovery live. That panel drives an unauthenticated provider-config passthrough, so it is a **demo-only control gated behind `ENABLE_PROVIDER_CONFIG=1`** (set in compose; off everywhere else — see docs/DECISIONS.md).
 
 Host ports: `4800` api · `4801` dashboard · `4802` provider-sim · `4803` receiver · `5433` postgres.
 
@@ -92,7 +92,7 @@ curl -s -X POST http://localhost:4800/v1/payment_intents \
 
 Run it twice: the second response is the stored first one, byte for byte.
 
-`amount_minor` is in minor units (cents) and bounded to `[50, 9007199254740991]`: below 50 the fixed `+30` fee would exceed the charge, and above 2^53−1 a JSON-number amount loses precision (see DECISIONS.md). Out-of-range or non-numeric amounts are rejected with `400`.
+`amount_minor` is in minor units (cents) and bounded to `[50, 9007199254740991]`: below 50 the fixed `+30` fee would exceed the charge, and above 2^53−1 a JSON-number amount loses precision (see docs/DECISIONS.md). Out-of-range or non-numeric amounts are rejected with `400`.
 
 ### Development
 
