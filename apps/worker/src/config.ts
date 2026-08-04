@@ -37,6 +37,10 @@ export interface WorkerConfig {
   completerMaxAttempts: number;
   /** Age past which a held idempotency-key lock is stale (same rule as the API). */
   idempotencyLockTimeoutMs: number;
+  /** Terminal (finished) idempotency keys older than this are reaped. */
+  idempotencyRetentionHours: number;
+  /** Reaper sweep cadence (idempotency-key retention GC). */
+  reapIntervalMs: number;
   /** Liveness file touched every poll; the compose healthcheck asserts a recent mtime. */
   livenessFile: string;
   /** Webhook POST timeout. */
@@ -77,6 +81,8 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     completerGraceMs: numEnv(env, 'COMPLETER_GRACE_MS', 30_000),
     completerMaxAttempts: numEnv(env, 'COMPLETER_MAX_ATTEMPTS', 25),
     idempotencyLockTimeoutMs: numEnv(env, 'IDEMPOTENCY_LOCK_TIMEOUT_MS', 90_000),
+    idempotencyRetentionHours: numEnv(env, 'IDEMPOTENCY_RETENTION_HOURS', 72),
+    reapIntervalMs: numEnv(env, 'REAP_INTERVAL_MS', 3_600_000),
     livenessFile: env.WORKER_LIVENESS_FILE ?? '/tmp/reckon-worker-alive',
     webhookTimeoutMs: numEnv(env, 'WEBHOOK_TIMEOUT_MS', 5000),
     maxAttempts: numEnv(env, 'MAX_ATTEMPTS', 10),

@@ -125,6 +125,29 @@ The real fix for the observed poison (`amount_minor` > 2^63 overflowing the
 intent INSERT) is the schema maximum above; this is the defence-in-depth
 backstop for any _other_ permanent stall.
 
+## Idempotency-key retention (reaper)
+
+`idempotency_keys` grows one row per payment forever; the reaper GCs it. A worker
+loop (`reapIntervalMs`, default 1h) and a CLI (`npm run reap`) both call
+`reapIdempotencyKeys`, which deletes keys that are **terminal (`recovery_point =
+'finished'`) AND older than `IDEMPOTENCY_RETENTION_HOURS` (default 72)**. An
+in-flight key (any non-`finished` point) is **never** reaped, so a request
+mid-flight or a stuck key awaiting the completer keeps its row. In this schema the
+"recovery point" is an inline column, not a separate table, so a deleted key takes
+its recovery point with it — nothing to cascade; and `idempotency_keys` is the
+child side of its only FK (`intent_id → payment_intents`), so the delete needs no
+FK ordering and never removes a `payment_intent` (the ledger / audit trail
+survive).
+
+**Ceiling — a reaped key replays as a brand-new request.** Retention is a
+one-way door: once a finished key is reaped, a later retry with that same
+`Idempotency-Key` no longer finds the stored response and is treated as a fresh
+request (a new intent, a new charge). That is acceptable because 72h is far
+beyond any real client's retry horizon; the window is the honest bound on "how
+long a replay is guaranteed identical". Set `IDEMPOTENCY_RETENTION_HOURS` higher
+if a slower client (or a longer dispute window) needs it. Rejected: reaping by
+absolute count/LRU (age is the property clients actually reason about).
+
 ## Refunds
 
 A refund is a **new compensating ledger transaction** (`kind 'refund'`), never

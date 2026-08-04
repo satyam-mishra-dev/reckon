@@ -16,6 +16,7 @@ import {
   handleTestSleep,
   type HandlerContext,
 } from './handlers.js';
+import { reapIdempotencyKeys } from './reaper.js';
 
 // The worker process: one claim/execute poll loop plus three periodic loops
 // (lease heartbeat, expired-lease sweeper, outbox fan-out + completer
@@ -204,6 +205,10 @@ export function startWorker(config: WorkerConfig, log: Logger): RunningWorker {
     }),
     periodically('reconcile-enqueuer', config.reconcileIntervalMs, async () => {
       if (await enqueueReconcileJob(pool)) log.info('reconcile job enqueued');
+    }),
+    periodically('reaper', config.reapIntervalMs, async () => {
+      const reaped = await reapIdempotencyKeys(pool, config.idempotencyRetentionHours);
+      if (reaped > 0) log.info({ reaped }, 'reaped expired idempotency keys');
     }),
   ]);
 

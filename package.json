@@ -17,6 +17,7 @@
     "test:integration": "npm run test -w packages/db -w apps/worker",
     "reconcile": "tsx apps/worker/src/reconcile-cli.ts",
     "payout": "tsx apps/worker/src/payout-cli.ts",
+    "reap": "tsx apps/worker/src/reap-cli.ts",
     "chaos": "tsx scripts/chaos.ts",
     "bench": "tsx scripts/bench.ts",
     "format": "prettier --write .",

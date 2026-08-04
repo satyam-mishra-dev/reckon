@@ -52,6 +52,8 @@ const testWorkerConfig = (databaseUrl: string): WorkerConfig => ({
   completerGraceMs: 600_000,
   completerMaxAttempts: 25,
   idempotencyLockTimeoutMs: 90_000,
+  idempotencyRetentionHours: 72,
+  reapIntervalMs: 600_000, // never fires during the suite
   livenessFile: '/tmp/reckon-test-webhooks-alive',
   webhookTimeoutMs: 2000,
   maxAttempts: MAX_ATTEMPTS,
