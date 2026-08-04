@@ -66,7 +66,7 @@ A create was profiled down from **32 to 26 sequential DB round-trips** (4 → 3 
 
 ## Demo
 
-Video not recorded yet — [docs/demo.md](docs/demo.md) is the 90-second shooting script. The playground below shows the same thing live.
+The playground below runs the whole system live. [docs/demo.md](docs/demo.md) is a 90-second walkthrough script for the same tour.
 
 ## Quickstart
 
