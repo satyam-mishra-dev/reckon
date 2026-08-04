@@ -1,0 +1,134 @@
+{
+  "generated_at": "2026-08-04T02:41:51.144Z",
+  "node": "v20.20.0",
+  "api_url": "http://localhost:4800",
+  "n_per_step": 500,
+  "ladder": [
+    1,
+    8,
+    32,
+    64
+  ],
+  "results": [
+    {
+      "scenario": "create (unique key)",
+      "concurrency": 1,
+      "n": 500,
+      "ok": 500,
+      "errors": 0,
+      "p50_ms": 10.8,
+      "p95_ms": 19.4,
+      "p99_ms": 24,
+      "mean_ms": 11.9,
+      "rps": 83.8
+    },
+    {
+      "scenario": "create (unique key)",
+      "concurrency": 8,
+      "n": 500,
+      "ok": 500,
+      "errors": 0,
+      "p50_ms": 16.2,
+      "p95_ms": 26.4,
+      "p99_ms": 52,
+      "mean_ms": 17.7,
+      "rps": 447.5
+    },
+    {
+      "scenario": "create (unique key)",
+      "concurrency": 32,
+      "n": 500,
+      "ok": 500,
+      "errors": 0,
+      "p50_ms": 74.4,
+      "p95_ms": 150.2,
+      "p99_ms": 161.9,
+      "mean_ms": 87.2,
+      "rps": 360.4
+    },
+    {
+      "scenario": "create (unique key)",
+      "concurrency": 64,
+      "n": 500,
+      "ok": 500,
+      "errors": 0,
+      "p50_ms": 106,
+      "p95_ms": 121.2,
+      "p99_ms": 125.8,
+      "mean_ms": 103.1,
+      "rps": 601.1
+    },
+    {
+      "scenario": "replay (finished key)",
+      "concurrency": 1,
+      "n": 500,
+      "ok": 500,
+      "errors": 0,
+      "p50_ms": 0.7,
+      "p95_ms": 1.5,
+      "p99_ms": 2.1,
+      "mean_ms": 0.8,
+      "rps": 1265
+    },
+    {
+      "scenario": "replay (finished key)",
+      "concurrency": 8,
+      "n": 500,
+      "ok": 500,
+      "errors": 0,
+      "p50_ms": 2.1,
+      "p95_ms": 5.5,
+      "p99_ms": 8,
+      "mean_ms": 2.5,
+      "rps": 3123.5
+    },
+    {
+      "scenario": "replay (finished key)",
+      "concurrency": 32,
+      "n": 500,
+      "ok": 500,
+      "errors": 0,
+      "p50_ms": 5.5,
+      "p95_ms": 8.8,
+      "p99_ms": 11,
+      "mean_ms": 5.9,
+      "rps": 5350.3
+    },
+    {
+      "scenario": "replay (finished key)",
+      "concurrency": 64,
+      "n": 500,
+      "ok": 500,
+      "errors": 0,
+      "p50_ms": 10.5,
+      "p95_ms": 13.2,
+      "p99_ms": 19.7,
+      "mean_ms": 10.8,
+      "rps": 5660.1
+    },
+    {
+      "scenario": "ledger post (sequential)",
+      "concurrency": 1,
+      "n": 1000,
+      "ok": 1000,
+      "errors": 0,
+      "p50_ms": 0.6,
+      "p95_ms": 1.1,
+      "p99_ms": 1.8,
+      "mean_ms": 0.7,
+      "rps": 1404.1
+    },
+    {
+      "scenario": "ledger post (8 clients)",
+      "concurrency": 8,
+      "n": 2000,
+      "ok": 2000,
+      "errors": 0,
+      "p50_ms": 1.5,
+      "p95_ms": 2.4,
+      "p99_ms": 3.1,
+      "mean_ms": 1.6,
+      "rps": 4915.5
+    }
+  ]
+}
