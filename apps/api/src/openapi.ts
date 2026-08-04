@@ -198,6 +198,19 @@ const COMPONENT_SCHEMAS = {
     },
     required: ['id', 'intent_id', 'amount_minor', 'created_at'],
   },
+  Payout: {
+    type: 'object',
+    description:
+      "A settlement payout: the merchant's swept merchant_payable balance, recorded " +
+      'as one append-only ledger transaction (debit merchant_payable, credit payout_clearing).',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      amount_minor: { type: 'integer', description: 'Amount paid out in minor units.' },
+      status: { type: 'string', enum: ['pending', 'paid'] },
+      created_at: { type: 'string', format: 'date-time' },
+    },
+    required: ['id', 'amount_minor', 'status', 'created_at'],
+  },
 } satisfies Record<string, JsonSchema>;
 
 // Per-operation documentation, keyed by OpenAPI path then lowercase method.
@@ -429,6 +442,53 @@ const OPERATIONS: Record<string, Record<string, OperationDoc>> = {
         '200': {
           description: 'A page of transactions with their entries.',
           content: json({ type: 'object' }),
+        },
+      },
+    },
+  },
+  '/v1/payouts': {
+    get: {
+      tags: ['Ledger'],
+      summary: 'List the merchant’s payouts',
+      description:
+        'Settlement payouts for the authenticated merchant, newest first (`limit` 1–100, ' +
+        'default 50). Each payout swept that merchant’s outstanding `merchant_payable` balance ' +
+        'into `payout_clearing` as one append-only ledger transaction. Money as strings.',
+      responses: {
+        '200': {
+          description: 'The merchant’s payouts.',
+          content: json(
+            { type: 'object' },
+            {
+              payouts: [
+                {
+                  id: '9f1e7c2a-3b4d-4e5f-8a1b-2c3d4e5f6a7b',
+                  amount_minor: '9710',
+                  status: 'paid',
+                  created_at: '2026-08-04T12:10:00.000Z',
+                },
+              ],
+            },
+          ),
+        },
+      },
+    },
+  },
+  '/v1/settlements': {
+    post: {
+      tags: ['Ledger'],
+      summary: 'Run the settlement batch',
+      description:
+        'Ops trigger: enqueues a `settle_payouts` job (deduped to at most one live job) that ' +
+        'sweeps every merchant with a positive `merchant_payable` balance into a payout. ' +
+        'Idempotent — a re-run pays nothing extra. Poll `GET /v1/payouts` for results.',
+      responses: {
+        '200': {
+          description: 'Whether a settlement job was enqueued (false if one was already live).',
+          content: json(
+            { type: 'object' },
+            { enqueued: true, job_id: 'b2c3d4e5-6f7a-4b8c-9d0e-1f2a3b4c5d6e' },
+          ),
         },
       },
     },

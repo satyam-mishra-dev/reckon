@@ -10,6 +10,7 @@ export const PLATFORM_ACCOUNT_TYPES = [
   'provider_clearing',
   'merchant_payable',
   'platform_revenue',
+  'payout_clearing',
 ] as const;
 
 export interface SeedOptions {

@@ -12,6 +12,7 @@ import {
   handleCompleteIntent,
   handleDeliverWebhook,
   handleReconcile,
+  handleSettlePayouts,
   handleTestSleep,
   type HandlerContext,
 } from './handlers.js';
@@ -46,6 +47,7 @@ export function startWorker(config: WorkerConfig, log: Logger): RunningWorker {
     ['deliver_webhook', handleDeliverWebhook],
     ['complete_intent', handleCompleteIntent],
     ['reconcile', handleReconcile],
+    ['settle_payouts', handleSettlePayouts],
   ]);
   if (config.testJobs) handlers.set('test_sleep', handleTestSleep);
   const kinds = [...handlers.keys()];

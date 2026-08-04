@@ -13,6 +13,7 @@ import {
 import { applyTransition, runIntentPipeline, type IntentRow } from '@reckon/api/pipeline';
 import type { WorkerConfig } from './config.js';
 import { runReconciliation } from './reconciler.js';
+import { runSettlement } from './settlement.js';
 
 // Job handlers + the two pollers that feed the queue (outbox fan-out,
 // completer enqueuer). Every handler is IDEMPOTENT — recovery is
@@ -434,6 +435,35 @@ export async function enqueueReconcileJob(db: Queryable): Promise<boolean> {
     `INSERT INTO jobs (kind, payload)
      VALUES ('reconcile', '{}'::jsonb)
      ON CONFLICT (kind) WHERE kind = 'reconcile' AND status IN ('pending', 'running')
+       DO NOTHING
+     RETURNING id`,
+  );
+  return result.rows.length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// settle_payouts — the settlement batch. runSettlement sweeps every merchant
+// with a positive merchant_payable balance, one atomic+idempotent TX each.
+// Triggered on demand (POST /v1/settlements enqueues it) or run directly by the
+// payout CLI; unlike reconcile it is not on a timer (it MOVES money — see DECISIONS).
+// ---------------------------------------------------------------------------
+
+export async function handleSettlePayouts(ctx: HandlerContext, job: JobRow): Promise<void> {
+  const { pool, config, log } = ctx;
+  await runSettlement(pool, log);
+  await completeJob(pool, job.id, config.workerId);
+}
+
+/**
+ * Enqueue a settle_payouts job unless one is already live. The partial unique
+ * index jobs_settle_payouts_live_idx + ON CONFLICT makes this race-free across
+ * workers. Returns true if a job was enqueued.
+ */
+export async function enqueueSettlementJob(db: Queryable): Promise<boolean> {
+  const result = await db.query<{ id: string }>(
+    `INSERT INTO jobs (kind, payload)
+     VALUES ('settle_payouts', '{}'::jsonb)
+     ON CONFLICT (kind) WHERE kind = 'settle_payouts' AND status IN ('pending', 'running')
        DO NOTHING
      RETURNING id`,
   );

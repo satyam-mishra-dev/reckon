@@ -157,6 +157,43 @@ non-`succeeded` intent is `409`; an unknown intent `404`.
 touch the intent state machine and the status enum, deliberately out of scope
 here to avoid coupling refunds to the payment pipeline's state transitions.
 
+## Settlement / payouts
+
+Completing the money lifecycle: after charges settle, the platform owes each
+merchant their `merchant_payable` balance (credit-normal liability = credits −
+debits). A **payout sweeps that balance** as a **new append-only ledger
+transaction** (`kind 'payout'`) — **debit `merchant_payable`, credit a new
+`payout_clearing` counter account** — so the whole ledger keeps summing to 0 and
+the charge is never edited. `payout_clearing` is seeded alongside the other four
+accounts. A payout is intent-less (it spans a merchant's whole balance, not one
+charge), so `ledger_transactions.intent_id` became nullable and `payout_id`
+links the transaction to its `payouts` row, mirroring `refund_id` exactly
+(partial unique index `(payout_id) WHERE payout_id IS NOT NULL`). The reconciler's
+orphan-transaction check now ignores intent-less rows (`intent_id IS NOT NULL AND
+NOT EXISTS …`) so payouts are not mistaken for orphans.
+
+**Idempotency is balance-derived, not a stored marker.** The batch settles one
+merchant per TX: lock the merchant row, **re-read the outstanding balance under
+that lock**, and post a payout for exactly that amount — the balance zeroes in
+the same TX. A crash mid-batch rolls back that merchant's payout (all-or-nothing
+via `postTransactionInTx`); a **re-run recomputes the now-zero balance and pays
+nothing extra**; a concurrent batch serializes on the merchant lock and finds
+nothing left. The swept balance can be paid exactly once because paying it _is_
+what zeroes it — the same reasoning as refunds (the ledger is the state), with
+the `(payout_id)` unique index as the schema backstop. A merchant whose balance
+is ≤ 0 (e.g. a full refund left `merchant_payable` at `−fee`) is skipped.
+
+**Exposure** mirrors reconcile: `runSettlement` in `apps/worker/src/settlement.ts`,
+a `settle_payouts` worker job (`handleSettlePayouts` + `enqueueSettlementJob`,
+deduped by `jobs_settle_payouts_live_idx`), a CLI (`npm run payout`), an ops
+trigger `POST /v1/settlements`, and a merchant read model `GET /v1/payouts`.
+
+**Deviation — no timer.** Unlike reconcile (a read-only audit on a 60s cron),
+settlement **moves money and drains the visible `merchant_payable` bar**, so it
+is triggered on demand (CLI / ops endpoint) rather than auto-fired on a worker
+loop. Ceiling: single-currency (USD), and 'paid' is synchronous in-ledger — the
+`'pending'` payout status is the documented hook for a real bank-transfer step.
+
 ## Provider-config passthrough is a gated demo control
 
 `GET/PUT /v1/provider/config` forwards to the provider-sim so the dashboard

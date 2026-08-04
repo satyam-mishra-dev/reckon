@@ -119,7 +119,7 @@ export interface LedgerEntry {
 
 export interface LedgerTransaction {
   id: string;
-  intent_id: string;
+  intent_id: string | null; // null for payouts (a payout sweeps a merchant, not one intent)
   kind: string;
   posted_at: string;
   entries: LedgerEntry[];

@@ -648,6 +648,46 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       );
       return { enqueued: result.rows.length > 0, job_id: result.rows[0]?.id ?? null };
     });
+
+    // Payouts for the authenticated merchant, newest first — the settlement read
+    // model (mirror of GET /v1/reconciliations for the ops trigger below).
+    app.get<{ Querystring: { limit: number } }>(
+      '/v1/payouts',
+      {
+        schema: {
+          querystring: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 } },
+          },
+        },
+      },
+      async (request) => {
+        const merchant = await getMerchantId();
+        const result = await pool.query(
+          `SELECT id, amount_minor::text, status, created_at
+           FROM payouts WHERE merchant_id = $1
+           ORDER BY created_at DESC, id DESC
+           LIMIT $2`,
+          [merchant, request.query.limit],
+        );
+        return { payouts: result.rows };
+      },
+    );
+
+    // Ops trigger for the settlement batch (mirror of POST /v1/reconciliations):
+    // enqueue a settle_payouts job unless one is already live. The worker runs
+    // runSettlement; results show up in GET /v1/payouts.
+    app.post('/v1/settlements', async () => {
+      const result = await pool.query<{ id: string }>(
+        `INSERT INTO jobs (kind, payload)
+         VALUES ('settle_payouts', '{}'::jsonb)
+         ON CONFLICT (kind) WHERE kind = 'settle_payouts' AND status IN ('pending', 'running')
+           DO NOTHING
+         RETURNING id`,
+      );
+      return { enqueued: result.rows.length > 0, job_id: result.rows[0]?.id ?? null };
+    });
   });
 
   return app;

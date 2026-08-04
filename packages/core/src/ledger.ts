@@ -3,7 +3,7 @@ import type { ClientBase } from 'pg';
 // Money is bigint minor units everywhere — never floats.
 
 export type Direction = 'debit' | 'credit';
-export type TransactionKind = 'charge' | 'fee' | 'refund' | 'reversal';
+export type TransactionKind = 'charge' | 'fee' | 'refund' | 'reversal' | 'payout';
 
 export interface EntryInput {
   accountId: string;
@@ -12,20 +12,27 @@ export interface EntryInput {
 }
 
 export interface PostTransactionInput {
-  intentId: string;
+  /**
+   * The intent this transaction belongs to. Undefined ONLY for kind 'payout',
+   * which sweeps a merchant's whole balance and is linked by payoutId instead
+   * (intent_id is nullable in the schema for exactly this case).
+   */
+  intentId?: string;
   kind: TransactionKind;
   entries: EntryInput[];
   /**
    * Set for kind 'refund' to link this transaction to its refunds row. Charge
    * and fee leave it undefined; the (intent_id, kind) idempotency below only
-   * applies to those refund_id-NULL rows, so refunds can repeat per intent.
+   * applies to those refund_id-/payout_id-NULL rows, so refunds can repeat per intent.
    */
   refundId?: string;
+  /** Set for kind 'payout' to link this transaction to its payouts row (mirror of refundId). */
+  payoutId?: string;
 }
 
 export interface PostedTransaction {
   id: string;
-  intentId: string;
+  intentId: string | undefined;
   kind: TransactionKind;
   /** true when this (intentId, kind) was already posted — nothing was written. */
   alreadyPosted: boolean;
@@ -85,12 +92,13 @@ type TransactionRow = { id: string };
  * `client` and owns COMMIT/ROLLBACK. This is what lets the idempotency pipeline
  * post ledger transactions and advance its recovery point atomically in one TX.
  *
- * Idempotency applies to charge/fee (refundId undefined): at most one row per
- * (intent_id, kind), via the partial unique index WHERE refund_id IS NULL; a
- * duplicate post writes nothing and returns alreadyPosted = true. Refunds carry
- * a refundId, don't match that partial index, and so may repeat per intent —
- * their one-post guarantee comes from the refunds table upstream (a refund is
- * only posted for a freshly-inserted refunds row).
+ * Idempotency applies to charge/fee (refundId + payoutId undefined): at most one
+ * row per (intent_id, kind), via the partial unique index WHERE refund_id IS NULL
+ * AND payout_id IS NULL; a duplicate post writes nothing and returns
+ * alreadyPosted = true. Refunds carry a refundId and payouts a payoutId, don't
+ * match that partial index, and so may repeat per intent — their one-post
+ * guarantee comes from the refunds/payouts tables upstream (each is only posted
+ * for a freshly-inserted refunds/payouts row).
  */
 export async function postTransactionInTx(
   client: ClientBase,
@@ -99,22 +107,24 @@ export async function postTransactionInTx(
   validateEntries(input.entries);
 
   const inserted = await client.query<TransactionRow>(
-    `INSERT INTO ledger_transactions (intent_id, kind, refund_id)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (intent_id, kind) WHERE refund_id IS NULL DO NOTHING
+    `INSERT INTO ledger_transactions (intent_id, kind, refund_id, payout_id)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (intent_id, kind) WHERE refund_id IS NULL AND payout_id IS NULL DO NOTHING
      RETURNING id`,
-    [input.intentId, input.kind, input.refundId ?? null],
+    [input.intentId ?? null, input.kind, input.refundId ?? null, input.payoutId ?? null],
   );
 
   const insertedRow = inserted.rows[0];
   if (insertedRow === undefined) {
-    // Conflict: a refund_id-NULL (charge/fee) row for this (intent_id, kind) is
-    // already posted (refunds never take this path — they carry a refund_id, so
-    // they never match the partial index the ON CONFLICT targets). Read it back
-    // and report a no-op. ON CONFLICT already waited out any concurrent writer,
-    // so the row is committed and visible here (READ COMMITTED).
+    // Conflict: a refund_id/payout_id-NULL (charge/fee) row for this (intent_id,
+    // kind) is already posted (refunds/payouts never take this path — they carry
+    // a refund_id/payout_id, so they never match the partial index the ON
+    // CONFLICT targets). Read it back and report a no-op. ON CONFLICT already
+    // waited out any concurrent writer, so the row is committed and visible here
+    // (READ COMMITTED).
     const existing = await client.query<TransactionRow>(
-      'SELECT id FROM ledger_transactions WHERE intent_id = $1 AND kind = $2 AND refund_id IS NULL',
+      `SELECT id FROM ledger_transactions
+       WHERE intent_id = $1 AND kind = $2 AND refund_id IS NULL AND payout_id IS NULL`,
       [input.intentId, input.kind],
     );
     const existingRow = existing.rows[0];
@@ -149,9 +159,10 @@ export async function postTransactionInTx(
  *   (never a pool — pool.query may use a different connection per statement);
  *   this function owns BEGIN/COMMIT/ROLLBACK on it.
  * - Idempotent per (intent_id, kind) for charge/fee via the partial unique index
- *   ledger_transactions_intent_id_kind_idx (WHERE refund_id IS NULL): a duplicate
- *   post writes nothing and returns the existing transaction with
- *   alreadyPosted = true. See postTransactionInTx for the refund case.
+ *   ledger_transactions_intent_id_kind_idx (WHERE refund_id IS NULL AND payout_id
+ *   IS NULL): a duplicate post writes nothing and returns the existing
+ *   transaction with alreadyPosted = true. See postTransactionInTx for the
+ *   refund/payout case.
  */
 export async function postTransaction(
   client: ClientBase,

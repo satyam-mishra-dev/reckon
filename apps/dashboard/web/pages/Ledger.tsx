@@ -246,7 +246,8 @@ function TransactionsPanel(): ReactNode {
   const rows = useMemo(() => {
     let list = data?.transactions ?? [];
     if (kind !== 'all') list = list.filter((t) => t.kind === kind);
-    if (intentQuery.trim()) list = list.filter((t) => t.intent_id.includes(intentQuery.trim()));
+    if (intentQuery.trim())
+      list = list.filter((t) => (t.intent_id ?? '').includes(intentQuery.trim()));
     return list;
   }, [data, kind, intentQuery]);
 

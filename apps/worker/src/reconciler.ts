@@ -348,9 +348,12 @@ export async function runReconciliation(
     `SELECT count(*)::int AS n FROM ledger_entries e
      WHERE NOT EXISTS (SELECT 1 FROM ledger_transactions t WHERE t.id = e.transaction_id)`,
   );
+  // Payouts are legitimately intent-less (intent_id IS NULL, linked by payout_id
+  // instead) — only an intent-linked transaction with a missing intent is orphaned.
   const orphanTxs = await pool.query<{ n: number }>(
     `SELECT count(*)::int AS n FROM ledger_transactions t
-     WHERE NOT EXISTS (SELECT 1 FROM payment_intents i WHERE i.id = t.intent_id)`,
+     WHERE t.intent_id IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM payment_intents i WHERE i.id = t.intent_id)`,
   );
 
   // ---- external pass -------------------------------------------------------
