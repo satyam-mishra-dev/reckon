@@ -263,7 +263,8 @@ and correctness is non-negotiable here.
 
 ## Correctness (non-negotiable, verified after the changes)
 
-- `npm test` — **83 passed** (core 50, api 9, worker 11, db 13), including the
+- `npm test` — **83 passed** (core 50, api 9, worker 11, db 13) as the suite
+  stood at this optimization pass (it has since grown to 102), including the
   crash-resume test, the 50×-concurrent single-charge/50-identical-response
   idempotency test, and the 1,000-transaction ledger balance property test.
 - `npm run chaos -- --intents 1000` — **all assertions passed**: ledger **drift 0**,
