@@ -125,6 +125,38 @@ The real fix for the observed poison (`amount_minor` > 2^63 overflowing the
 intent INSERT) is the schema maximum above; this is the defence-in-depth
 backstop for any _other_ permanent stall.
 
+## Refunds
+
+A refund is a **new compensating ledger transaction** (`kind 'refund'`), never
+an edit of the charge — the ledger stays append-only. The double-entry is the
+mirror of the charge's money leg: **credit `customer_receivable`, debit
+`merchant_payable`** for the refund amount. The **fee is not returned**: the
+merchant bears the processing fee on a refund, so a full refund leaves that
+intent's `merchant_payable` at `-fee` (charge `+amount`, fee `-fee`, refund
+`-amount`) — economically correct, and it keeps the whole ledger summing to 0.
+
+**Multiple partial refunds.** A charge can be refunded repeatedly up to the
+charged amount. The old `ledger_transactions_intent_id_kind_idx UNIQUE (intent_id,
+kind)` would have capped it at one refund, so it became **two partial indexes**:
+`(intent_id, kind) WHERE refund_id IS NULL` still pins charge/fee to one each,
+and `(refund_id) WHERE refund_id IS NOT NULL` pins one ledger transaction per
+refund. `postTransactionInTx`'s `ON CONFLICT (intent_id, kind) WHERE refund_id IS
+NULL` targets the first, so charge/fee idempotency is byte-identical to before.
+
+**Idempotency + over-refund.** `refunds UNIQUE(merchant_id, idempotency_key)` is
+the dedupe key: a retried POST replays the original refund (`200`) and posts no
+second ledger transaction. The over-refund guard (`already_refunded + requested
+≤ charge_amount`, else `400 refund_exceeds_refundable`) runs inside the refund
+TX under a `SELECT … FOR UPDATE` on the intent row, so two different keys racing
+on the same intent serialize instead of both slipping past the cap. Refunding a
+non-`succeeded` intent is `409`; an unknown intent `404`.
+
+**Status is unchanged.** The intent stays `succeeded`; refund state is derived
+(`refunded_total_minor` in the read model). A dedicated `'refunded'` /
+`'partially_refunded'` status is a **documented future extension** — it would
+touch the intent state machine and the status enum, deliberately out of scope
+here to avoid coupling refunds to the payment pipeline's state transitions.
+
 ## Provider-config passthrough is a gated demo control
 
 `GET/PUT /v1/provider/config` forwards to the provider-sim so the dashboard

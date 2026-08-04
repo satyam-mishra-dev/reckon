@@ -15,6 +15,12 @@ export interface PostTransactionInput {
   intentId: string;
   kind: TransactionKind;
   entries: EntryInput[];
+  /**
+   * Set for kind 'refund' to link this transaction to its refunds row. Charge
+   * and fee leave it undefined; the (intent_id, kind) idempotency below only
+   * applies to those refund_id-NULL rows, so refunds can repeat per intent.
+   */
+  refundId?: string;
 }
 
 export interface PostedTransaction {
@@ -74,11 +80,17 @@ export function reduceBalances(entries: Iterable<EntryInput>): Map<string, bigin
 type TransactionRow = { id: string };
 
 /**
- * Composable core of postTransaction: same validation, inserts, and
- * (intent_id, kind) idempotency, but NO transaction control — the caller must
- * already hold an open TX on `client` and owns COMMIT/ROLLBACK. This is what
- * lets the idempotency pipeline post ledger transactions and advance its
- * recovery point atomically in one TX.
+ * Composable core of postTransaction: same validation, inserts, and idempotency,
+ * but NO transaction control — the caller must already hold an open TX on
+ * `client` and owns COMMIT/ROLLBACK. This is what lets the idempotency pipeline
+ * post ledger transactions and advance its recovery point atomically in one TX.
+ *
+ * Idempotency applies to charge/fee (refundId undefined): at most one row per
+ * (intent_id, kind), via the partial unique index WHERE refund_id IS NULL; a
+ * duplicate post writes nothing and returns alreadyPosted = true. Refunds carry
+ * a refundId, don't match that partial index, and so may repeat per intent —
+ * their one-post guarantee comes from the refunds table upstream (a refund is
+ * only posted for a freshly-inserted refunds row).
  */
 export async function postTransactionInTx(
   client: ClientBase,
@@ -87,20 +99,22 @@ export async function postTransactionInTx(
   validateEntries(input.entries);
 
   const inserted = await client.query<TransactionRow>(
-    `INSERT INTO ledger_transactions (intent_id, kind)
-     VALUES ($1, $2)
-     ON CONFLICT (intent_id, kind) DO NOTHING
+    `INSERT INTO ledger_transactions (intent_id, kind, refund_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (intent_id, kind) WHERE refund_id IS NULL DO NOTHING
      RETURNING id`,
-    [input.intentId, input.kind],
+    [input.intentId, input.kind, input.refundId ?? null],
   );
 
   const insertedRow = inserted.rows[0];
   if (insertedRow === undefined) {
-    // Conflict: this (intent_id, kind) is already posted. Read it back and
-    // report a no-op. ON CONFLICT already waited out any concurrent writer,
+    // Conflict: a refund_id-NULL (charge/fee) row for this (intent_id, kind) is
+    // already posted (refunds never take this path — they carry a refund_id, so
+    // they never match the partial index the ON CONFLICT targets). Read it back
+    // and report a no-op. ON CONFLICT already waited out any concurrent writer,
     // so the row is committed and visible here (READ COMMITTED).
     const existing = await client.query<TransactionRow>(
-      'SELECT id FROM ledger_transactions WHERE intent_id = $1 AND kind = $2',
+      'SELECT id FROM ledger_transactions WHERE intent_id = $1 AND kind = $2 AND refund_id IS NULL',
       [input.intentId, input.kind],
     );
     const existingRow = existing.rows[0];
@@ -134,9 +148,10 @@ export async function postTransactionInTx(
  *   caller-supplied client. The caller must hand over a dedicated client
  *   (never a pool — pool.query may use a different connection per statement);
  *   this function owns BEGIN/COMMIT/ROLLBACK on it.
- * - Idempotent per (intent_id, kind) via the unique index
- *   ledger_transactions_intent_id_kind_idx: a duplicate post writes nothing
- *   and returns the existing transaction with alreadyPosted = true.
+ * - Idempotent per (intent_id, kind) for charge/fee via the partial unique index
+ *   ledger_transactions_intent_id_kind_idx (WHERE refund_id IS NULL): a duplicate
+ *   post writes nothing and returns the existing transaction with
+ *   alreadyPosted = true. See postTransactionInTx for the refund case.
  */
 export async function postTransaction(
   client: ClientBase,

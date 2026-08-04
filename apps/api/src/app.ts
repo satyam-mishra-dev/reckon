@@ -1,10 +1,16 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Pool } from 'pg';
-import { enqueueJob } from '@reckon/core';
+import { enqueueJob, postTransactionInTx } from '@reckon/core';
 import type { ApiConfig } from './config.js';
 import { incCounter, observe, renderMetrics } from './metrics.js';
-import { runIntentPipeline, type FaultHook, type RecoveryPoint } from './pipeline.js';
+import {
+  inTx,
+  resolveAccounts,
+  runIntentPipeline,
+  type FaultHook,
+  type RecoveryPoint,
+} from './pipeline.js';
 import { registerReadModels } from './read-models.js';
 import { registerDocs } from './openapi.js';
 
@@ -17,6 +23,37 @@ export interface BuildAppOptions {
 interface CreateIntentBody {
   amount_minor: number;
   currency: string;
+}
+
+interface CreateRefundBody {
+  amount_minor?: number;
+  reason?: string;
+}
+
+interface RefundIntentRow {
+  id: string;
+  merchant_id: string;
+  amount_minor: string; // pg returns bigint as string
+  currency: string;
+  status: string;
+}
+
+interface RefundRow {
+  id: string;
+  amount_minor: string;
+  reason: string | null;
+  created_at: Date;
+}
+
+/** Shared response shape for a new refund (201) and its replay (200). */
+function refundResponse(row: RefundRow, intentId: string): Record<string, unknown> {
+  return {
+    id: row.id,
+    intent_id: intentId,
+    amount_minor: Number(row.amount_minor), // bounded by MAX_AMOUNT_MINOR — safe as JS number
+    reason: row.reason,
+    created_at: row.created_at.toISOString(),
+  };
 }
 
 interface StoredResponseRow {
@@ -259,6 +296,189 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
             request.log.error({ err: unlockErr, keyId }, 'failed to release idempotency lock');
           }
           return reply.code(500).send({ error: 'internal_error' });
+        }
+      },
+    );
+
+    // -------------------------------------------------------------------------
+    // Refunds: compensating money movement against a settled charge.
+    //
+    // A succeeded intent can be refunded multiple times (partial refunds) up to
+    // the charged amount. The refunds table (UNIQUE(merchant_id, idempotency_key))
+    // is the idempotency + total-refunded source of truth; each refund posts one
+    // 'refund' ledger transaction linked by refund_id. The fee is NOT reversed —
+    // the merchant bears the processing fee (see DECISIONS: "Refunds").
+    // -------------------------------------------------------------------------
+    app.post<{
+      Params: { id: string };
+      Body: CreateRefundBody;
+      Headers: { 'idempotency-key': string };
+    }>(
+      '/v1/payment_intents/:id/refunds',
+      {
+        schema: {
+          headers: {
+            type: 'object',
+            required: ['idempotency-key'],
+            properties: { 'idempotency-key': { type: 'string', minLength: 1, maxLength: 255 } },
+          },
+          params: {
+            type: 'object',
+            required: ['id'],
+            properties: { id: { type: 'string', pattern: '^[0-9A-Za-z]{1,32}$' } },
+          },
+          body: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              // Omitted -> refund the full remaining refundable amount. Minimum 1
+              // (not the charge's 50 floor: a partial refund can be any positive
+              // amount); the over-refund guard is the real ceiling.
+              amount_minor: { type: 'integer', minimum: 1, maximum: MAX_AMOUNT_MINOR },
+              reason: { type: 'string', maxLength: 500 },
+            },
+          },
+        },
+        // Same pre-coercion guard as create: reject a present-but-non-numeric
+        // amount before ajv turns {amount_minor: true} -> 1 into a real refund.
+        preValidation: async (request, reply) => {
+          const raw = (request.body as { amount_minor?: unknown } | null | undefined)?.amount_minor;
+          if (raw !== undefined && typeof raw !== 'number') {
+            return reply
+              .code(400)
+              .send({ error: 'invalid_amount', message: 'amount_minor must be a JSON number' });
+          }
+        },
+      },
+      async (request, reply) => {
+        const intentId = request.params.id;
+        const idempotencyKey = request.headers['idempotency-key'];
+        const requestedInput = request.body.amount_minor;
+        const reason = request.body.reason ?? null;
+
+        const client = await pool.connect();
+        try {
+          const outcome = await inTx(client, async (): Promise<{ code: number; body: unknown }> => {
+            // Lock the intent row for the life of the TX: concurrent refunds on
+            // the SAME intent serialize here, so the over-refund guard below
+            // reads a SUM(refunds) that already includes any sibling refund that
+            // committed. NOTE: per-intent row lock; fine — refunds are rare.
+            const intentRes = await client.query<RefundIntentRow>(
+              `SELECT id, merchant_id, amount_minor, currency, status
+                 FROM payment_intents WHERE id = $1 FOR UPDATE`,
+              [intentId],
+            );
+            const intent = intentRes.rows[0];
+            if (intent === undefined) {
+              return { code: 404, body: { error: 'not_found' } };
+            }
+            if (intent.status !== 'succeeded') {
+              return {
+                code: 409,
+                body: {
+                  error: 'intent_not_refundable',
+                  message: `cannot refund an intent with status '${intent.status}'; only succeeded intents are refundable`,
+                },
+              };
+            }
+
+            // Replay: this key already produced a refund — return it verbatim,
+            // BEFORE the over-refund guard (whose SUM now includes that refund
+            // and would wrongly 400 the replay). A concurrent same-key insert is
+            // caught by ON CONFLICT below instead.
+            const prior = await client.query<RefundRow>(
+              `SELECT id, amount_minor, reason, created_at FROM refunds
+                 WHERE merchant_id = $1 AND idempotency_key = $2`,
+              [intent.merchant_id, idempotencyKey],
+            );
+            const priorRow = prior.rows[0];
+            if (priorRow !== undefined) {
+              return { code: 200, body: refundResponse(priorRow, intentId) };
+            }
+
+            const chargeAmount = BigInt(intent.amount_minor);
+            const refundedRes = await client.query<{ total: string }>(
+              `SELECT COALESCE(SUM(amount_minor), 0)::text AS total FROM refunds WHERE intent_id = $1`,
+              [intentId],
+            );
+            const alreadyRefunded = BigInt(refundedRes.rows[0]?.total ?? '0');
+            const remaining = chargeAmount - alreadyRefunded;
+            const requested = requestedInput === undefined ? remaining : BigInt(requestedInput);
+
+            if (requested <= 0n) {
+              return {
+                code: 400,
+                body: {
+                  error: 'nothing_to_refund',
+                  message: 'no refundable amount remains on this intent',
+                },
+              };
+            }
+            if (alreadyRefunded + requested > chargeAmount) {
+              return {
+                code: 400,
+                body: {
+                  error: 'refund_exceeds_refundable',
+                  message: 'refund exceeds refundable amount',
+                },
+              };
+            }
+
+            const inserted = await client.query<RefundRow>(
+              `INSERT INTO refunds (intent_id, merchant_id, idempotency_key, amount_minor, reason)
+                 VALUES ($1, $2, $3, $4, $5)
+                 ON CONFLICT (merchant_id, idempotency_key) DO NOTHING
+                 RETURNING id, amount_minor, reason, created_at`,
+              [intentId, intent.merchant_id, idempotencyKey, requested.toString(), reason],
+            );
+            const refund = inserted.rows[0];
+            if (refund === undefined) {
+              // A concurrent same-key request won the insert between our replay
+              // check and here. Read it back and replay — never double-post.
+              const raced = await client.query<RefundRow>(
+                `SELECT id, amount_minor, reason, created_at FROM refunds
+                   WHERE merchant_id = $1 AND idempotency_key = $2`,
+                [intent.merchant_id, idempotencyKey],
+              );
+              const racedRow = raced.rows[0];
+              if (racedRow === undefined) {
+                throw new Error('refund row vanished between conflicting insert and read-back');
+              }
+              return { code: 200, body: refundResponse(racedRow, intentId) };
+            }
+
+            // Compensating double-entry, mirror of the charge's money leg (fee
+            // NOT reversed): credit customer_receivable, debit merchant_payable.
+            const byType = await resolveAccounts(client, intent.currency);
+            const accountId = (type: string): string => {
+              const id = byType.get(type);
+              if (id === undefined) {
+                throw new Error(`no ${type} account for currency ${intent.currency}`);
+              }
+              return id;
+            };
+            await postTransactionInTx(client, {
+              intentId,
+              kind: 'refund',
+              refundId: refund.id,
+              entries: [
+                {
+                  accountId: accountId('customer_receivable'),
+                  direction: 'credit',
+                  amountMinor: requested,
+                },
+                {
+                  accountId: accountId('merchant_payable'),
+                  direction: 'debit',
+                  amountMinor: requested,
+                },
+              ],
+            });
+            return { code: 201, body: refundResponse(refund, intentId) };
+          });
+          return reply.code(outcome.code).send(outcome.body);
+        } finally {
+          client.release();
         }
       },
     );

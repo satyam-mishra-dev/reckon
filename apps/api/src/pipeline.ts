@@ -102,7 +102,7 @@ function isRetryableSqlError(err: unknown): boolean {
   );
 }
 
-async function inTx<T>(client: PoolClient, fn: () => Promise<T>): Promise<T> {
+export async function inTx<T>(client: PoolClient, fn: () => Promise<T>): Promise<T> {
   await client.query('BEGIN');
   try {
     const result = await fn();
@@ -349,7 +349,10 @@ async function phaseProviderTimeout(
 // accounts are fetched lazily on first use. Restart on chart-of-accounts change.
 const accountsByCurrency = new Map<string, Map<string, string>>();
 
-async function resolveAccounts(client: PoolClient, currency: string): Promise<Map<string, string>> {
+export async function resolveAccounts(
+  client: PoolClient,
+  currency: string,
+): Promise<Map<string, string>> {
   const cached = accountsByCurrency.get(currency);
   if (cached !== undefined) return cached;
   const accounts = await client.query<{ id: string; type: string }>(

@@ -94,7 +94,7 @@ export function registerReadModels(
       const intent = intentResult.rows[0] as { id: string } | undefined;
       if (intent === undefined) return reply.code(404).send({ error: 'not_found' });
 
-      const [key, transactions, entries, events] = await Promise.all([
+      const [key, transactions, entries, events, refunds] = await Promise.all([
         pool.query(
           `SELECT id, key, recovery_point, locked_at, response_code, created_at
            FROM idempotency_keys WHERE intent_id = $1`,
@@ -118,6 +118,11 @@ export function registerReadModels(
         pool.query(
           `SELECT id, type, payload, created_at, dispatched_at
            FROM events WHERE payload ->> 'intent_id' = $1 ORDER BY created_at, id`,
+          [id],
+        ),
+        pool.query(
+          `SELECT id, amount_minor::text, reason, created_at
+           FROM refunds WHERE intent_id = $1 ORDER BY created_at, id`,
           [id],
         ),
       ]);
@@ -145,6 +150,15 @@ export function registerReadModels(
         entriesByTx.set(row.transaction_id, list);
       }
 
+      // NOTE: intent.status is NOT mutated by refunds — a 'refunded' /
+      // 'partially_refunded' status is a deliberate future extension (see
+      // DECISIONS: "Refunds"). refunded_total_minor is the derived refund state
+      // the dashboard shows alongside the unchanged succeeded status.
+      const refundedTotal = (refunds.rows as { amount_minor: string }[]).reduce(
+        (sum, r) => sum + BigInt(r.amount_minor),
+        0n,
+      );
+
       return {
         intent,
         idempotency_key: key.rows[0] ?? null,
@@ -154,7 +168,35 @@ export function registerReadModels(
         })),
         events: events.rows,
         deliveries,
+        refunds: refunds.rows,
+        refunded_total_minor: refundedTotal.toString(),
       };
+    },
+  );
+
+  // Refunds for one intent (the POST /:id/refunds sub-resource, read side).
+  app.get<{ Params: { id: string } }>(
+    '/v1/payment_intents/:id/refunds',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', pattern: '^[0-9A-Za-z]{1,32}$' } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const id = request.params.id;
+      const intent = await pool.query('SELECT 1 FROM payment_intents WHERE id = $1', [id]);
+      if (intent.rowCount === 0) return reply.code(404).send({ error: 'not_found' });
+      const refunds = await pool.query<{ amount_minor: string }>(
+        `SELECT id, amount_minor::text, reason, created_at
+         FROM refunds WHERE intent_id = $1 ORDER BY created_at, id`,
+        [id],
+      );
+      const total = refunds.rows.reduce((sum, r) => sum + BigInt(r.amount_minor), 0n);
+      return { refunds: refunds.rows, refunded_total_minor: total.toString() };
     },
   );
 

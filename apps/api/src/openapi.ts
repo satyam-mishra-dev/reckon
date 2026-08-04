@@ -186,6 +186,18 @@ const COMPONENT_SCHEMAS = {
     },
     required: ['id', 'status', 'failure_code', 'amount_minor', 'currency', 'created_at'],
   },
+  Refund: {
+    type: 'object',
+    description: 'A refund against a succeeded intent (one compensating ledger transaction).',
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      intent_id: { type: 'string', description: 'The refunded intent id.' },
+      amount_minor: { type: 'integer', description: 'Refunded amount in minor units.' },
+      reason: { type: 'string', description: 'Optional caller-supplied reason (may be null).' },
+      created_at: { type: 'string', format: 'date-time' },
+    },
+    required: ['id', 'intent_id', 'amount_minor', 'created_at'],
+  },
 } satisfies Record<string, JsonSchema>;
 
 // Per-operation documentation, keyed by OpenAPI path then lowercase method.
@@ -297,8 +309,82 @@ const OPERATIONS: Record<string, Record<string, OperationDoc>> = {
         'events, and webhook deliveries — the complete money trail for one payment.',
       responses: {
         '200': {
-          description: 'The intent and everything derived from it.',
+          description: 'The intent and everything derived from it (including refunds).',
           content: json({ type: 'object' }),
+        },
+        '404': { description: 'No intent with that id.', content: json(ref('Error')) },
+      },
+    },
+  },
+  '/v1/payment_intents/{id}/refunds': {
+    post: {
+      tags: ['Payments'],
+      summary: 'Refund a payment intent',
+      description:
+        'Refunds a **succeeded** intent, in full or in part. Omit `amount_minor` to refund the ' +
+        'full remaining refundable amount; multiple partial refunds accumulate up to the charged ' +
+        'amount. **The `Idempotency-Key` header is required** and is the dedupe key: a retry with ' +
+        'the same key replays the original refund (`200`) and posts no second ledger transaction. ' +
+        'The processing **fee is not returned** — the merchant bears it, so a full refund drives ' +
+        '`merchant_payable` to `-fee`.',
+      responses: {
+        '201': {
+          description: 'A new refund was posted.',
+          content: json(ref('Refund'), {
+            id: '7b2f2c8e-9c3a-4d1e-8f2a-1b2c3d4e5f60',
+            intent_id: '01J8Z3K9QF2',
+            amount_minor: 2500,
+            reason: 'customer request',
+            created_at: '2026-08-04T12:05:00.000Z',
+          }),
+        },
+        '200': {
+          description: 'Idempotent replay: the same key already produced this refund.',
+          content: json(ref('Refund')),
+        },
+        '400': {
+          description:
+            'Non-numeric / out-of-range amount, or the refund would exceed the refundable amount ' +
+            '(`refund_exceeds_refundable`), or nothing remains to refund (`nothing_to_refund`).',
+          content: json(ref('Error'), {
+            error: 'refund_exceeds_refundable',
+            message: 'refund exceeds refundable amount',
+          }),
+        },
+        '404': { description: 'No intent with that id.', content: json(ref('Error')) },
+        '409': {
+          description: 'The intent is not `succeeded` — only succeeded intents are refundable.',
+          content: json(ref('Error'), {
+            error: 'intent_not_refundable',
+            message:
+              "cannot refund an intent with status 'failed'; only succeeded intents are refundable",
+          }),
+        },
+      },
+    },
+    get: {
+      tags: ['Payments'],
+      summary: 'List an intent’s refunds',
+      description:
+        'Returns every refund posted against the intent plus `refunded_total_minor` (money fields ' +
+        'as strings). `404` if the intent does not exist.',
+      responses: {
+        '200': {
+          description: 'The intent’s refunds and their total.',
+          content: json(
+            { type: 'object' },
+            {
+              refunds: [
+                {
+                  id: '7b2f2c8e-9c3a-4d1e-8f2a-1b2c3d4e5f60',
+                  amount_minor: '2500',
+                  reason: 'customer request',
+                  created_at: '2026-08-04T12:05:00.000Z',
+                },
+              ],
+              refunded_total_minor: '2500',
+            },
+          ),
         },
         '404': { description: 'No intent with that id.', content: json(ref('Error')) },
       },
