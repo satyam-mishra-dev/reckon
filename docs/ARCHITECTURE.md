@@ -6,14 +6,14 @@ way it is.
 
 ## Components
 
-| Process      | Code                | Role                                                                                                                                                                                              |
-| ------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| api          | `apps/api`          | HTTP surface: payment intents behind the idempotency pipeline, webhook endpoint registration, DLQ ops, read models for the dashboard                                                              |
-| worker       | `apps/worker`       | Claims jobs from the hand-rolled Postgres queue: webhook delivery, the completer, reconciliation. Also runs the outbox fan-out and the lease sweeper                                              |
-| provider-sim | `apps/provider-sim` | The card provider, adversarial on purpose: configurable declines, latency, timeout-after-charge, duplicate callbacks. `GET /truth` is the authoritative charge list the reconciler audits against |
-| receiver     | `apps/receiver`     | Demo merchant endpoint and the reference webhook consumer: raw-body signature verification, staleness check, dedupe on event id                                                                   |
-| dashboard    | `apps/dashboard`    | Static HTML/CSS/JS served by a small Fastify process with a same-origin proxy to the api. Read-only, plus the playground                                                                          |
-| postgres     | `packages/db`       | Schema, migrations (node-pg-migrate), seed. The queue, the outbox, the ledger and the idempotency keys are all plain tables here                                                                  |
+| Process      | Code                | Role                                                                                                                                                                                                      |
+| ------------ | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| api          | `apps/api`          | HTTP surface: payment intents behind the idempotency pipeline, webhook endpoint registration, DLQ ops, read models for the dashboard                                                                      |
+| worker       | `apps/worker`       | Claims jobs from the hand-rolled Postgres queue: webhook delivery, the completer, reconciliation. Also runs the outbox fan-out and the lease sweeper                                                      |
+| provider-sim | `apps/provider-sim` | The card provider, adversarial on purpose: configurable declines, latency, timeout-after-charge, duplicate callbacks. `GET /truth` is the authoritative charge list the reconciler audits against         |
+| receiver     | `apps/receiver`     | Demo merchant endpoint and the reference webhook consumer: raw-body signature verification, staleness check, dedupe on event id                                                                           |
+| dashboard    | `apps/dashboard`    | React + Vite SPA (react-router, Tailwind v4, shadcn-style Radix UI) built to `dist` and served by a small Fastify process with a same-origin proxy to the api. Read-only read models, plus the playground |
+| postgres     | `packages/db`       | Schema, migrations (node-pg-migrate), seed. The queue, the outbox, the ledger and the idempotency keys are all plain tables here                                                                          |
 
 Domain logic with no I/O lives in `packages/core` (ledger validation, intent
 state machine, queue SQL helpers, fee math, webhook signing). That is where
@@ -119,10 +119,12 @@ is what the chaos run (and CI) asserts.
 
 ## Read models and dashboard
 
-The dashboard is deliberately thin: `apps/api/src/read-models.ts` exposes list
-and detail queries over the same tables the engine writes (intents with the
+The read models stay thin: `apps/api/src/read-models.ts` exposes list and
+detail queries over the same tables the engine writes (intents with the
 recovery-point trail, ledger transactions with entries, derived balances, DLQ,
-reconciliation reports), and `apps/dashboard` is hand-written HTML/CSS/vanilla
-JS served statically with a small proxy so the browser stays same-origin. No
-build step, no framework — a read-model UI does not justify a pipeline
-(DECISIONS.md has the full reasoning).
+reconciliation reports). `apps/dashboard` is a React 19 + Vite SPA
+(`react-router` routes, Tailwind v4, shadcn-style Radix primitives) that Vite
+builds to `dist`; a small Fastify server serves that build with a same-origin
+`/api/*` proxy and an SPA fallback, so the browser stays same-origin and the
+containerized API stays reachable by service name. The UI polls those read
+models and adds the `/play` playground (DECISIONS.md has the full reasoning).

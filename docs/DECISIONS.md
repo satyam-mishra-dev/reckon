@@ -263,15 +263,25 @@ was rejected because the interesting behavior lives in Postgres semantics:
 `SKIP LOCKED` contention, trigger errors, unique-violation races, `40001`
 retries. A mock proves the mock. Cost: ~seconds per suite; worth it.
 
-## No-framework dashboard
+## React + Vite dashboard (build step accepted)
 
-Hand-written HTML/CSS/vanilla JS behind a ~100-line Fastify static server with
-a same-origin `/api/*` proxy. A read-model UI (tables, counters, one form)
-does not justify a build pipeline: no bundler, no framework upgrades, no CDN
-assets, view-source shows everything. The proxy exists so the browser never
-needs CORS and the containerized API stays reachable by service name.
-Rejected: React/Vite (build step for zero interactivity gain), htmx (a
-dependency to avoid ~30 lines of fetch).
+The redesigned control-room UI is real component and client-state work, not a
+static read model: a nav shell over four `react-router` routes (overview, the
+`/play` playground, ledger, ops), a live-polling balance bar that re-weighs on
+every ledger change, and a playground of dialogs, tabs and a slider that drive
+the provider-sim through `PUT /v1/provider/config`. So `apps/dashboard` is a
+React 19 + Vite app: `react-router` for the client-side routes, Tailwind v4
+(`@tailwindcss/vite`) with shadcn-style Radix primitives (dialog, popover, tabs,
+slider) for the UI, fonts bundled via `@fontsource` (no CDN). Vite builds to
+`dist`, which the same ~100-line Fastify static server serves with a same-origin
+`/api/*` proxy and an SPA fallback — the proxy still spares the browser CORS and
+keeps the containerized API reachable by service name. Tradeoff accepted: a
+bundler, a build step and UI dependencies to keep current, in exchange for the
+component structure, routing and polling state the redesigned UI needs.
+Rejected: the earlier hand-written HTML/vanilla-JS page (it stopped paying its
+way once the playground grew interactive state and the UI split into views), and
+an SSR meta-framework like Next.js (rendering/routing machinery a single-origin,
+statically-served demo SPA does not need).
 
 ## Bench driver in TypeScript, not k6
 
