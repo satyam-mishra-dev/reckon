@@ -6,7 +6,7 @@ captions land. Record against a freshly booted stack (`docker compose down -v
 
 1. **(0:00)** Terminal: `docker compose up -d --wait` finishing, then
    `docker compose ps` — six services, all healthy.
-2. **(0:10)** Playground (http://localhost:4801/playground.html): hit **Pay**
+2. **(0:10)** Playground (http://localhost:4801/play): hit **Pay**
    once, point at the 200 and the provider ref.
 3. **(0:20)** Hit **Double-submit ×5** — five byte-identical responses, one
    intent, one provider charge. This is the thesis of the project; linger.
