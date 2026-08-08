@@ -43,7 +43,7 @@ Every number below is reproduced by a committed script. None are estimates.
 
 **Signature test** (in CI on every push): the same request fired 50× concurrently produces exactly **1 intent, 1 provider charge, 1 ledger charge transaction, and 50 byte-identical responses**.
 
-**Test suite**: 102 tests green — 51 unit (including a 1,000-transaction ledger property test) and 51 integration tests against real Postgres via Testcontainers. No mocked infrastructure.
+**Test suite**: 102 tests green — 71 unit (including a 1,000-transaction ledger property test) and 31 integration tests against real Postgres via Testcontainers. No mocked infrastructure.
 
 **Benchmarks** (`npm run bench` against the booted compose stack; Node, local Docker, M-series laptop — reproduce on your own hardware). Numbers below are the **median of 3 runs**; run-to-run RPS varies ±~30% on a shared laptop (this measurement box was co-resident with two other full Docker stacks). The committed `bench-results.json` is the most recent single run. See `docs/PERFORMANCE.md` for the controlled before/after of the round-trip optimizations.
 
